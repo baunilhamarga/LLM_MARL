@@ -33,6 +33,8 @@ parser.add_argument('--max_step', type = int, default=30,
                     help='maximum steps allowed')
 parser.add_argument('--exp_name', type = str, default='default_exp',
                     help='exp name to save')
+parser.add_argument('--cutoff', type = float, default=0.0,
+                    help='probability of communication cutoff every round, e.g., 0.5 means commnunication in not available 50% of the time.')
 # model
 args = parser.parse_args()
 
@@ -84,6 +86,9 @@ with open(DATA_PATH + 'summary.csv', 'w+', encoding='utf-8') as f:
 who_has_inspected_what = {'alpha':set(),'bravo':set(),'charlie':set()}
 
 while not done['__all__'] and round <= args.max_step:
+    print(f"{60*'-'}Start of Round {round}:{60*'-'}")
+    env.env.render(overlay_graph=True, save_path=DATA_PATH + f'round_{round}.pdf')
+    input(f"Press Enter to continue")
     for agent_id in chat_agents.keys():
         chat_agent = chat_agents[agent_id]
         if round == 1 and not belief:
