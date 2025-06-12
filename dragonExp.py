@@ -4,6 +4,8 @@ import os
 from dragonTextEnv import DragonTextEnv, ChatAgent
 import numpy as np
 import time
+from pathlib import Path
+import utils
 
 
 parser = argparse.ArgumentParser(description='Text interface for LLM agent')
@@ -39,7 +41,6 @@ parser.add_argument('--cutoff', type = float, default=0.0,
 args = parser.parse_args()
 
 print(args)
-
 
 DATA_PATH = os.path.join(args.save_path ,args.model ,args.exp_name,'seed' + str(args.seed))+'/'
 # DATA_PATH += 'GPT4-turbo-comm-seed24/'
