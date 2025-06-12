@@ -40,12 +40,20 @@ parser.add_argument('--cutoff', type = float, default=0.0,
 # model
 args = parser.parse_args()
 
+exp_base   = args.exp_name
+save_root  = Path(args.save_path)          # Path object once, reuse it
+args.exp_name = utils.next_experiment_name(exp_base, save_root, args.model, args.seed)
+
 print(args)
 
 DATA_PATH = os.path.join(args.save_path ,args.model ,args.exp_name,'seed' + str(args.seed))+'/'
 # DATA_PATH += 'GPT4-turbo-comm-seed24/'
 if not os.path.exists(DATA_PATH):
     os.makedirs(DATA_PATH)
+    
+renders_path = os.path.join(DATA_PATH, 'renders')
+if not os.path.exists(renders_path):
+    os.makedirs(renders_path)
 
 # print(obs_text)
 seed = args.seed
@@ -73,7 +81,7 @@ done = {'__all__':False}
 round = 1
 
 cols = ['round', 'agent_id',
- 'chat_output', 'action', 'comm','obs_text','new_belief','ToM1st','ToM2nd','ToM3rd']
+ 'chat_output', 'action', 'comm','obs_text','new_belief','ToM1st','ToM2nd','ToM3rd', 'ToM1st_q', 'ToM2nd_q', 'ToM3rd_q', 'ground_truth']
 
 
 with open(DATA_PATH + 'summary.csv', 'w+', encoding='utf-8') as f:
@@ -88,8 +96,8 @@ who_has_inspected_what = {'alpha':set(),'bravo':set(),'charlie':set()}
 
 while not done['__all__'] and round <= args.max_step:
     print(f"{60*'-'}Start of Round {round}:{60*'-'}")
-    env.env.render(overlay_graph=True, save_path=DATA_PATH + f'round_{round}.pdf')
-    input(f"Press Enter to continue")
+    env.env.render(overlay_graph=True, save_path=os.path.join(renders_path, f'round_{round}.pdf'))
+    #input(f"Press Enter to continue")
     for agent_id in chat_agents.keys():
         chat_agent = chat_agents[agent_id]
         if round == 1 and not belief:
@@ -126,49 +134,50 @@ while not done['__all__'] and round <= args.max_step:
                     ground_truth = True
 
                 # first-order ToM / introspective
-                ToM1st = chat_agent.ask(obs_text+
-                    'Do you know the current contents of room {room_id}?'.format(player_id=target_id,
+                ToM1st_q = 'Do you know the current contents of room {room_id}?'.format(player_id=target_id,
                                                                                                   room_id=initial_actions[
-                                                                                                      agent_id].node().id))
+                                                                                                      agent_id].node().id)
+                ToM1st = chat_agent.ask(obs_text + ToM1st_q)
                 # second-order ToM
-                ToM2nd = chat_agent.ask(obs_text+
-                    'Does player {player_id} know the current contents of room {room_id}?'.format(player_id=target_id,
+                ToM2nd_q = 'Does player {player_id} know the current contents of room {room_id}?'.format(player_id=target_id,
                                                                                                   room_id=initial_actions[
-                                                                                                      agent_id].node().id))
+                                                                                                      agent_id].node().id)
+                ToM2nd = chat_agent.ask(obs_text + ToM2nd_q)
                 # third-order ToM
-                ToM3rd = chat_agent.ask(obs_text+
-                    'Based on the observation and previous history, is player {player_id} aware of the fact that you know the current contents of room {room_id}?'.format(player_id=target_id,
+                ToM3rd_q = 'Based on the observation and previous history, is player {player_id} aware of the fact that you know the current contents of room {room_id}?'.format(player_id=target_id,
                                                                                                   room_id=initial_actions[
-                                                                                                      agent_id].node().id))
+                                                                                                      agent_id].node().id)
+                ToM3rd = chat_agent.ask(obs_text + ToM3rd_q)
             elif initial_actions[agent_id].tool() is not None:
                 ground_truth = False
                 if agent.bomb:
                     bomb_id = agent.bomb.id
 
                     # first-order ToM / introspective
-                    ToM1st = chat_agent.ask(obs_text+
-                        'Do you know the state and remaining sequence of bomb {bomb_id} has been changed?'.format(
-                            player_id=target_id, bomb_id=bomb_id))
+                    ToM1st_q = 'Do you know the state and remaining sequence of bomb {bomb_id} has been changed?'.format(
+                            player_id=target_id, bomb_id=bomb_id)
+                    ToM1st = chat_agent.ask(obs_text + ToM1st_q)
 
                     # second-order ToM
-                    ToM2nd = chat_agent.ask(obs_text+
-                        'Does player {player_id} know the state and remaining sequence of bomb {bomb_id} has been changed?'.format(player_id=target_id, bomb_id=bomb_id))
+                    ToM2nd_q = 'Does player {player_id} know the state and remaining sequence of bomb {bomb_id} has been changed?'.format(
+                            player_id=target_id, bomb_id=bomb_id)
+                    ToM2nd = chat_agent.ask(obs_text + ToM2nd_q)
                     # third-order ToM
-                    ToM3rd = chat_agent.ask(obs_text+
-                        'Based on the observation and previous history, is player {player_id} aware of the fact that you have changed the state and remaining sequence of bomb {bomb_id}?'.format(
+                    ToM3rd_q = 'Based on the observation and previous history, is player {player_id} aware of the fact that you have changed the state and remaining sequence of bomb {bomb_id}?'.format(
                             player_id=target_id,
-                            bomb_id=bomb_id))
+                            bomb_id=bomb_id)
+                    ToM3rd = chat_agent.ask(obs_text + ToM3rd_q)
                 elif isinstance(reward, int):
                     if reward >= 0:
-                        ToM1st = chat_agent.ask(obs_text +
-                                                'Do you know a bomb phase has just been defused?')
+                        ToM1st_q = 'Do you know a bomb phase has just been defused?'
+                        ToM1st = chat_agent.ask(obs_text + ToM1st_q)
 
                         # second-order ToM
-                        ToM2nd = chat_agent.ask(obs_text +
-                                                'Does player {player_id} know a bomb phase has just been defused?'.format(player_id = target_id))
+                        ToM2nd_q = 'Does player {player_id} know a bomb phase has just been defused?'.format(player_id = target_id)
+                        ToM2nd = chat_agent.ask(obs_text + ToM2nd_q)
                         # third-order ToM
-                        ToM3rd = chat_agent.ask(obs_text +
-                                                'Based on the observation and previous history, is player {player_id} aware of the fact that you know a bomb phase has just been defused?'.format(player_id = target_id))
+                        ToM3rd_q = 'Based on the observation and previous history, is player {player_id} aware of the fact that you know a bomb phase has just been defused?'.format(player_id = target_id)
+                        ToM3rd = chat_agent.ask(obs_text + ToM3rd_q)
 
 
             elif initial_actions[agent_id] == Action.inspect_bomb:
@@ -177,16 +186,16 @@ while not done['__all__'] and round <= args.max_step:
                     who_has_inspected_what[agent_id].add(bomb_id)
                     ground_truth = bomb_id in who_has_inspected_what[target_id]
                     # first-order ToM / introspective
-                    ToM1st = chat_agent.ask(obs_text+
-                        'Do you know the sequence of bomb {bomb_id}?'.format(bomb_id=bomb_id))
+                    ToM1st_q = 'Do you know the sequence of bomb {bomb_id}?'.format(bomb_id=bomb_id)
+                    ToM1st = chat_agent.ask(obs_text + ToM1st_q)
                     # second-order ToM
-                    ToM2nd = chat_agent.ask(obs_text+
-                        'Does player {player_id} know the sequence of bomb {bomb_id}?'.format(player_id=target_id,
-                                                                                              bomb_id=bomb_id))
+                    ToM2nd_q = 'Does player {player_id} know the sequence of bomb {bomb_id}?'.format(player_id=target_id,
+                                                                                              bomb_id=bomb_id)
+                    ToM2nd = chat_agent.ask(obs_text + ToM2nd_q)
                     # third-order ToM
-                    ToM3rd = chat_agent.ask(obs_text+
-                        'Based on the observation and previous history, is player {player_id} aware of the fact that you know the sequence of bomb {bomb_id}?'.format(player_id=target_id,
-                                                                                              bomb_id=bomb_id))
+                    ToM3rd_q = 'Based on the observation and previous history, is player {player_id} aware of the fact that you know the sequence of bomb {bomb_id}?'.format(player_id=target_id,
+                                                                                              bomb_id=bomb_id)
+                    ToM3rd = chat_agent.ask(obs_text + ToM3rd_q)
                 else:
                     ground_truth = None
                     ToM1st = None
@@ -205,11 +214,12 @@ while not done['__all__'] and round <= args.max_step:
 
         chat_agent.save(DATA_PATH)
 
-        record = {'round': round, 'agent_id': agent_id, 'chat_output': chat_output[agent_id], 'action':initial_actions[agent_id].name.replace('_', ' '),'comm':communications[agent_id],'obs_text': obs_text}
-        with open(DATA_PATH + 'record.json', 'a+', encoding='utf-8') as f:
+        record = {'round': round, 'agent_id': agent_id, 'chat_output': chat_output[agent_id], 'action':initial_actions[agent_id].name.replace('_', ' '),'comm':communications[agent_id],'obs_text': obs_text,"new_belief":new_belief,'ToM1st':ToM1st, 'ToM2nd':ToM2nd, 'ToM3rd':ToM3rd, 'ToM1st_q': ToM1st_q, 'ToM2nd_q': ToM2nd_q, 'ToM3rd_q': ToM3rd_q, 'ground_truth': ground_truth}
+        with open(DATA_PATH + 'record.jsonl', 'a+', encoding='utf-8') as f:
             json.dump(record, f)
+            f.write('\n')
 
-        summary = {'round': round, 'agent_id': agent_id, 'chat_output': chat_output[agent_id], 'action':initial_actions[agent_id].name.replace('_', ' '),'comm':communications[agent_id],'obs_text': obs_text,"new_belief":new_belief,'ToM1st':ToM1st, 'ToM2nd':ToM2nd, 'ToM3rd':ToM3rd}
+        summary = {'round': round, 'agent_id': agent_id, 'chat_output': chat_output[agent_id], 'action':initial_actions[agent_id].name.replace('_', ' '),'comm':communications[agent_id],'obs_text': obs_text,"new_belief":new_belief,'ToM1st':ToM1st, 'ToM2nd':ToM2nd, 'ToM3rd':ToM3rd, 'ToM1st_q': ToM1st_q, 'ToM2nd_q': ToM2nd_q, 'ToM3rd_q': ToM3rd_q, 'ground_truth': ground_truth}
         print(summary)
         with open(DATA_PATH + 'summary.csv', 'a+', encoding='utf-8') as f:
             for k,v in summary.items():
