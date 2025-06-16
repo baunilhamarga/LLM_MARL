@@ -249,3 +249,8 @@ while not done['__all__'] and round <= args.max_step:
             f.write('\n')
 
     round +=1
+
+results = {'score': env.env.score, 'rounds': round - 1, 'invalid_actions': invalid_actions, 'total_actions': total_actions, 'action_success_rate': (total_actions - invalid_actions) / total_actions if total_actions > 0 else 0}
+
+with open(os.path.join(DATA_PATH, 'results.json'), 'w', encoding='utf-8') as f:
+    json.dump(results, f, indent=2)
