@@ -53,6 +53,7 @@ class DragonTextEnv():
     def step(self,agent_id, round, initial_actions, communications):
         # action is object
         # agent is str index
+        valid_action = True
         reward = {agent_id: 0 for agent_id in self.env.agents.keys()}
         info = {agent_id: {} for agent_id in self.env.agents.keys()}
         prev_agent_health = {agent.id: agent.health for agent in self.env.agents.values()}
@@ -64,6 +65,7 @@ class DragonTextEnv():
         agent = self.env.agents[agent_id]
         if action is None:
             obs_text = "Invalid action."
+            valid_action = False
         elif action == Action.inspect_bomb:
             if agent.bomb:
                 bomb_id = str(agent.bomb.id)
@@ -79,6 +81,7 @@ class DragonTextEnv():
                 current_room = str(agent.node.id)
                 obs_text = "There is no bomb in the current current location, Room {current_room}, for you to inspect.".format(
                     current_room=current_room)
+                valid_action = False
         elif action.node() is not None:
             # Go to the given node
             if self.env._get_action_mask(agent_id)[action] or action.node().id == agent.node.id:
@@ -94,6 +97,7 @@ class DragonTextEnv():
                 current_room = str(agent.node.id)
                 obs_text = "You can not directly move to Room {room_id} because it is not adjacent to your current location, Room {current_room}. Consider taking a detour to another room first and then move to your destination.".format(
                     room_id=room_id, current_room=current_room)
+                valid_action = False
 
 
         elif action.tool() is not None:
@@ -124,12 +128,15 @@ class DragonTextEnv():
 
                         obs_text = "You can not apply Tool {tool_color} to Bomb {bomb_id} because the sequence of this bomb is {sequence}. You will need to apply other color tool first.".format(
                             tool_color=tool_color, bomb_id=bomb_id, sequence=sequence)
+                        valid_action = False
                 else:
                     obs_text = "There is no bomb in your current location, room {room_id}, for you to defuse.".format(
                         room_id=agent.node.id)
+                    valid_action = False
             else:
                 obs_text = "You do not have {tool}. Consider asking your teammates who have this tool to help you defuse the bomb.".format(
                     tool=COLOR_TO_STR[action.tool()])
+                valid_action = False
 
 
         self.env.tick()
@@ -177,7 +184,7 @@ class DragonTextEnv():
 
 
         # print(text)
-        return obs, reward, done, info, text
+        return obs, reward, done, info, text, valid_action
 
     def step_text(self,agent_id, round, initial_actions, communications):
         # action is object
@@ -358,12 +365,12 @@ class DragonTextEnv():
                 agent_id = r['agent_id']
                 initial_actions[agent_id] = Action[r['action'].replace(' ', '_')]
                 communications[agent_id] = r['comm']
-                _, reward, done, info, obs_text = self.step(agent_id, round, initial_actions, communications)
+                _, reward, done, info, obs_text, valid_action = self.step(agent_id, round, initial_actions, communications)
                 round = r['round']
             else:
                 agent_id = r['agent_id']
                 initial_actions[agent_id], communications[agent_id] = self.decode_action(r["chat_output"])
-                _, reward, done, info, obs_text = self.step(agent_id, round, initial_actions, communications)
+                _, reward, done, info, obs_text, valid_action = self.step(agent_id, round, initial_actions, communications)
                 round = r['round']
             if round >= ending_round:
                 break

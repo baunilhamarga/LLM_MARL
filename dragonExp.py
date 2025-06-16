@@ -82,6 +82,8 @@ chat_output = {}
 actions = {}
 done = {'__all__':False}
 round = 1
+invalid_actions = 0
+total_actions = 0
 
 cols = ['round', 'agent_id',
  'chat_output', 'action', 'comm','obs_text','new_belief','ToM1st','ToM2nd','ToM3rd', 'ToM1st_q', 'ToM2nd_q', 'ToM3rd_q', 'ground_truth']
@@ -104,7 +106,7 @@ while not done['__all__'] and round <= args.max_step:
     for agent_id in chat_agents.keys():
         chat_agent = chat_agents[agent_id]
         if round == 1 and not belief:
-            _, reward, done, info, obs_text = env.step(agent_id, 0,initial_actions, communications)
+            _, reward, done, info, obs_text, valid_action = env.step(agent_id, 0,initial_actions, communications)
 
             chat_agent.update_history(obs_text)
 
@@ -114,8 +116,13 @@ while not done['__all__'] and round <= args.max_step:
         initial_actions[agent_id], communications[agent_id] = env.decode_action(chat_output[agent_id])
         # initial_actions[agent_id], communications[agent_id] = env.decode_action_API(chat_output[agent_id])
 
+        _, reward, done, info, obs_text, valid_action = env.step(agent_id, round,initial_actions, communications)
 
-        _, reward, done, info, obs_text = env.step(agent_id, round,initial_actions, communications)
+        if not valid_action:
+            print(f"Invalid action for agent {agent_id} in round {round}.")
+            invalid_actions += 1
+            
+        total_actions += 1
 
         new_belief = chat_agent.update_history(obs_text)
 
@@ -222,6 +229,11 @@ while not done['__all__'] and round <= args.max_step:
 
 
         chat_agent.save(DATA_PATH)
+
+        if initial_actions[agent_id] is None:
+            class InvalidAction:
+                name = "Invalid"
+            initial_actions[agent_id] = InvalidAction()
 
         record = {'round': round, 'agent_id': agent_id, 'chat_output': chat_output[agent_id], 'action':initial_actions[agent_id].name.replace('_', ' '),'comm':communications[agent_id],'obs_text': obs_text,"new_belief":new_belief,'ToM1st':ToM1st, 'ToM2nd':ToM2nd, 'ToM3rd':ToM3rd, 'ToM1st_q': ToM1st_q, 'ToM2nd_q': ToM2nd_q, 'ToM3rd_q': ToM3rd_q, 'ground_truth': ground_truth}
         with open(DATA_PATH + 'record.jsonl', 'a+', encoding='utf-8') as f:
