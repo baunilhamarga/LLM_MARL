@@ -25,8 +25,8 @@ AGENT_COLOR = {
 BLOCK_INFO = {
     'obstacle': ('Obstacle', _rgb(50, 50, 50)),
     'ground': ('Ground', _rgb(255, 255, 255)),
-    'water': ('Water', _rgb(155, 200, 255)),
-    'fire': ('Fire', _rgb(255, 174, 66)),
+    #'water': ('Water', _rgb(155, 200, 255)),
+    #'fire': ('Fire', _rgb(255, 174, 66)),
     'bomb_inactive': ('Inactive Bomb', _rgb(255, 180, 180)),
     'bomb_active': ('Active Bomb', _rgb(255, 0, 0)),
 }
@@ -171,6 +171,7 @@ class Renderer:
             nx.draw(
                 directed_graph,
                 pos={node.id: flip(*node.centroid) for node in self.env.graph.nodes.values()},
+                labels={node.id: str(node.id) for node in self.env.graph.nodes.values()},
                 arrows=False, node_size=10, node_color='silver', edge_color='silver',
                 alpha=0.3, ax=self._ax,
             )
@@ -179,9 +180,12 @@ class Renderer:
         if self._show_legend:
             handles = [mpatches.Patch(label=l, color=c) for l, c in BLOCK_INFO.values()]
             for color, c in AGENT_COLOR.items():
-                handles.append(_legend_circle(f'{color.name.capitalize()} Player', c))
+                #handles.append(_legend_circle(f'{color.name.capitalize()} Player', c))
+                # Map colors to custom agent names
+                agent_names = {Color.red: "Alpha", Color.green: "Bravo", Color.blue: "Charlie"}
+                handles.append(_legend_circle(f'{agent_names[color]}', c))
 
             plt.legend(
                 handles=handles, handlelength=1, handleheight=1, loc='lower center',
-                ncol=3, bbox_to_anchor=(0.5, -0.5), facecolor='black', framealpha=0.05,
+                ncol=2, bbox_to_anchor=(0.5, -0.5), facecolor='black', framealpha=0.05,
             ).get_frame().set_boxstyle('square')
