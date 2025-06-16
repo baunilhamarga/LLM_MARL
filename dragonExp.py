@@ -51,6 +51,9 @@ DATA_PATH = os.path.join(args.save_path ,args.model ,args.exp_name,'seed' + str(
 if not os.path.exists(DATA_PATH):
     os.makedirs(DATA_PATH)
     
+with open(os.path.join(DATA_PATH, 'args.json'), 'w', encoding='utf-8') as f:
+    json.dump(vars(args), f, indent=2)
+    
 renders_path = os.path.join(DATA_PATH, 'renders')
 if not os.path.exists(renders_path):
     os.makedirs(renders_path)
