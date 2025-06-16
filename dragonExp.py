@@ -130,7 +130,13 @@ while not done['__all__'] and round <= args.max_step:
 
         if ToM:
             target_id = np.random.choice([x for x in chat_agents.keys() if x != agent_id])
-            if initial_actions[agent_id].node() is not None:
+            if initial_actions[agent_id] is None:
+                ground_truth = None
+                ToM1st = None
+                ToM2nd = None
+                ToM3rd = None
+
+            elif initial_actions[agent_id].node() is not None:
                 if agent.node.id != initial_actions[agent_id].node().id:
                     ground_truth = False
                 else:
