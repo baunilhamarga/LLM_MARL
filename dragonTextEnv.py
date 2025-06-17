@@ -557,7 +557,7 @@ class ChatAgent():
             else:
                 raise
             
-            self._bump_usage(response.usage)
+        self._bump_usage(response.usage)
         
         return response.choices[0].message.content
 
