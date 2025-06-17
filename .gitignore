@@ -1,3 +1,9 @@
+# Ignore Weights & Biases files
+wandb/
+wandb-debug.log
+wandb-settings/
+*wandb*
+
 # Ignroe logs
 data/
 
