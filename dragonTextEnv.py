@@ -7,6 +7,8 @@ import openai
 import time
 import json
 import os
+from collections.abc import Mapping
+from numbers import Number
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -469,6 +471,8 @@ class ChatAgent():
         self.model = model
         self.temperature=temperature
         self.model_supports_temperature = {}
+        self.total_usage = {}
+
         self.belief = belief
         # self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
         self.allow_comm = allow_comm
@@ -489,6 +493,41 @@ class ChatAgent():
                 self.message_history.append({"role": "user", "content": self.last_belief+INITIAL_PROMPT})
         else:
             self.message_history = message_history
+
+    @staticmethod
+    def _usage_to_dict(usage_obj) -> dict:
+        """
+        Convert the `CompletionUsage` object into a flat dict that contains
+        only entries whose numeric value > 0.
+
+        Nested `*_tokens_details` blocks are flattened with a dotted name:
+            prompt_tokens_details.cached_tokens  → 0   (filtered out)
+            completion_tokens_details.audio_tokens → 7 → kept as
+                'completion_tokens_details.audio_tokens': 7
+        """
+        # 1) turn the Pydantic model (or any object) into a python dict
+        if hasattr(usage_obj, "model_dump"):       # pydantic v2 (OpenAI ≥ 1.0.0)
+            raw = usage_obj.model_dump(exclude_none=True)
+        elif hasattr(usage_obj, "dict"):           # pydantic v1 fallback
+            raw = usage_obj.dict(exclude_none=True)
+        else:                                      # plain object → __dict__
+            raw = vars(usage_obj)
+
+        # 2) recursively flatten & filter
+        def flatten(d: Mapping, prefix: str = ""):
+            for k, v in d.items():
+                name = f"{prefix}.{k}" if prefix else k
+                if isinstance(v, Mapping):
+                    yield from flatten(v, name)
+                elif isinstance(v, Number) and v > 0:
+                    yield name, v
+
+        return dict(flatten(raw))
+    
+    def _bump_usage(self, usage_obj) -> None:
+        """Accumulate the latest call’s `usage` into `self.total_usage`."""
+        for key, value in self._usage_to_dict(usage_obj).items():
+                self.total_usage[key] = self.total_usage.get(key, 0) + value
 
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
     def makeAPIcall(self):
@@ -514,10 +553,11 @@ class ChatAgent():
                 response = openai.chat.completions.create(
                     model=self.model,
                     messages=self.message_history,
-                    temperature=self.temperature
                 )
             else:
                 raise
+            
+            self._bump_usage(response.usage)
         
         return response.choices[0].message.content
 
