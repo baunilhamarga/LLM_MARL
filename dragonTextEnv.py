@@ -468,6 +468,7 @@ class ChatAgent():
         self.agent_id = agent_id
         self.model = model
         self.temperature=temperature
+        self.model_supports_temperature = {}
         self.belief = belief
         # self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
         self.allow_comm = allow_comm
@@ -492,12 +493,32 @@ class ChatAgent():
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
     def makeAPIcall(self):
 
+        supports_temp = self.model_supports_temperature.get(self.model, True)
 
-        response = openai.chat.completions.create(
+        try:
+            if supports_temp:
+                response = openai.chat.completions.create(
+                    model=self.model,
+                    messages=self.message_history,
+                    temperature=self.temperature,
+                )
+            else:
+                response = openai.chat.completions.create(
+                    model=self.model,
+                    messages=self.message_history,
+                )
+        except openai.BadRequestError as e:
+            if "Unsupported parameter: 'temperature'" in str(e):
+                self.model_supports_temperature[self.model] = False
+                # Retry without temperature
+                response = openai.chat.completions.create(
                     model=self.model,
                     messages=self.message_history,
                     temperature=self.temperature
                 )
+            else:
+                raise
+        
         return response.choices[0].message.content
 
 
