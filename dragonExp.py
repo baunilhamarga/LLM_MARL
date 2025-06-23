@@ -257,7 +257,7 @@ for agent_id, chat_agent in chat_agents.items():
     for key, value in usage.items():
         total_usage[key] = total_usage.get(key, 0) + (value or 0)
 
-results = {'score': env.env.score, 'rounds': round - 1, 'invalid_actions': invalid_actions, 'total_actions': total_actions, 'action_success_rate': (total_actions - invalid_actions) / total_actions if total_actions > 0 else 0}
+results = {'score': env.env.score, 'rounds': round - 1, 'invalid_actions': invalid_actions, 'total_actions': total_actions, 'valid_action_rate': (total_actions - invalid_actions) / total_actions if total_actions > 0 else 0}
 results.update(total_usage)
 
 with open(os.path.join(DATA_PATH, 'results.json'), 'w', encoding='utf-8') as f:
