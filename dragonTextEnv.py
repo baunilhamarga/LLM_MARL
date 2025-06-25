@@ -292,7 +292,11 @@ class DragonTextEnv():
         return text
 
     def decode_action(self, chat_output):
-
+        lower = chat_output.lower()
+        if 'action selection' in lower:
+            lower = lower.split('action selection', 1)[1]  # keep text to the right of 'action selection'
+        tokens = ''.join(ch if ch.isalpha() else ' ' for ch in lower).split()  # tokenisation by spaces and removing non-alpha characters
+        
         Action = self.env.action_enum
         comm = ''
         action = None
@@ -302,24 +306,27 @@ class DragonTextEnv():
                 chat_output = chat_output.split('Message to Team:')[0]+ chat_output.split('Message to Team:')[1].split('"')[2]
             else:
                 comm = ''
-            if 'inspect' in chat_output.lower():
+            if 'inspect' in lower:
                 action = Action.inspect_bomb
-            elif 'move to room' in chat_output.lower():
-                room_id = int(chat_output.lower().split('move to room')[1][1])
+            elif 'move to room' in lower:
+                room_id = int(lower.split('move to room')[1][1])
                 if room_id in self.valid_node:
                     action = Action.go_to(room_id)
                 else:
                     action = None
-            elif 'go_to_node_' in chat_output.lower():
-                room_id = int(chat_output.lower().split('go_to_node_')[1][0])
+            elif 'go_to_node_' in lower:
+                room_id = int(lower.split('go_to_node_')[1][0])
                 action = Action.go_to(room_id)
-            elif 'apply' in chat_output.lower() or 'defuse' in chat_output.lower():
-                if 'red' in chat_output.lower():
+            elif 'apply' in lower or 'defuse' in lower:
+                colour = next((tok for tok in tokens if tok in ('red', 'blue', 'green')), None)  # find the first colour token
+                if colour == 'red':
                     action = Action.use_tool(Tool.red)
-                elif 'blue' in chat_output.lower():
+                elif colour == 'blue':
                     action = Action.use_tool(Tool.blue)
-                elif 'green' in chat_output.lower():
+                elif colour == 'green':
                     action = Action.use_tool(Tool.green)
+                else:
+                    action = None 
             # elif 'wait' in chat_output.lower() or 'stay' in chat_output.lower():
             #     action = Action.remove_help_beacon
             else:
