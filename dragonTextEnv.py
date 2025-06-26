@@ -473,12 +473,15 @@ UPDATE_PROMPT = "Please update your belief state based on the above observation,
 INITIAL_PROMPT = "Given the above belief state, what is your next action?"
 
 class ChatAgent():
-    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, cutoff = False):
+    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, cutoff = False, log_chat=True, log_path="data/chat_log.json", memory_size=2):
         self.agent_id = agent_id
         self.model = model
         self.temperature=temperature
         self.model_supports_temperature = {}
         self.total_usage = {}
+        self.log_chat=log_chat
+        self.log_path = log_path
+        self.memory_size = memory_size
 
         self.belief = belief
         # self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
@@ -563,11 +566,25 @@ class ChatAgent():
                 )
             else:
                 raise
-            
-        self._bump_usage(response.usage)
         
+        if self.log_chat:    
+            # Append prompt and response to a JSON file for logging
+            log_entry = {
+                'agent': self.agent_id,
+                'prompt': self.message_history if self.message_history else "",
+                'response': response.choices[0].message.content
+            }
+            try:
+                if os.path.exists(self.log_path):
+                    with open(self.log_path, "a", encoding="utf-8") as log_file:
+                        log_file.write(json.dumps(log_entry) + "\n")
+                else:
+                    with open(self.log_path, "w", encoding="utf-8") as log_file:
+                        log_file.write(json.dumps(log_entry) + "\n")
+            except Exception as e:
+                print(f"Logging failed: {e}")
+            self._bump_usage(response.usage)
         return response.choices[0].message.content
-
 
     def update_history(self,text):
 
@@ -597,10 +614,10 @@ class ChatAgent():
             new_belief = "None"
 
 
-
-        # if len(self.message_history)>=7:
-        #     self.message_history.pop(2)
-        #     self.message_history.pop(2)
+        # delete oldest round in memory
+        if self.memory_size != -1 and len(self.message_history)>self.memory_size*2+2: # message_history: index 0 and 1 are game rules + 2 items per round (belief and action)
+            self.message_history.pop(2)
+            self.message_history.pop(2)
         return new_belief
 
     def step(self):

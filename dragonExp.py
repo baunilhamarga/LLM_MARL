@@ -37,6 +37,9 @@ parser.add_argument('--exp_name', type = str, default='default_exp',
                     help='exp name to save')
 parser.add_argument('--cutoff', type = float, default=0.0,
                     help='probability of communication cutoff every round, e.g., 0.5 means commnunication in not available 50% of the time.')
+parser.add_argument('--memory_size', type = int, default=2,
+                    help='how many previous rounds to keep in memory for each agent, e.g., 2 means the agent can access the last 2 rounds of history. -1 means no limit.')
+
 # model
 args = parser.parse_args()
 
@@ -50,6 +53,8 @@ DATA_PATH = os.path.join(args.save_path ,args.model ,args.exp_name,'seed' + str(
 # DATA_PATH += 'GPT4-turbo-comm-seed24/'
 if not os.path.exists(DATA_PATH):
     os.makedirs(DATA_PATH)
+
+chat_log_path = os.path.join(DATA_PATH, 'chat_log.jsonl')
     
 with open(os.path.join(DATA_PATH, 'args.json'), 'w', encoding='utf-8') as f:
     json.dump(vars(args), f, indent=2)
@@ -58,13 +63,13 @@ renders_path = os.path.join(DATA_PATH, 'renders')
 if not os.path.exists(renders_path):
     os.makedirs(renders_path)
 
-# print(obs_text)
 seed = args.seed
 ToM = args.tom
 belief = args.belief
 allow_comm = args.allow_comm
 model_name = args.model
 act_and_comm = True
+memory_size = args.memory_size
 
 env = DragonTextEnv(seed = seed,include_agent_action = args.include_agent_action,allow_comm = allow_comm,act_and_comm = act_and_comm,tool_per_agent = args.tool_per_agent)
 Action = env.env.action_enum
@@ -72,9 +77,9 @@ obs = env.env._get_obs()
 info = {}
 initial_node = str(env.env.agents['alpha'].node.id)
 initial_bomb = str(env.env.agents['alpha'].bomb.id)
-chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node),
-               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node),
-               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node)}
+chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size),
+               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size),
+               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size)}
 initial_actions = {'alpha':Action.go_to(int(initial_node)),'bravo':Action.go_to(int(initial_node)),'charlie':Action.go_to(int(initial_node))}
 communications = {'alpha':'None','bravo':'None','charlie':'None'}
 
@@ -228,7 +233,7 @@ while not done['__all__'] and round <= args.max_step:
 
 
 
-        chat_agent.save(DATA_PATH)
+        # chat_agent.save(DATA_PATH)
 
         if initial_actions[agent_id] is None:
             class InvalidAction:
