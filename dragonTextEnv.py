@@ -557,7 +557,7 @@ class ChatAgent():
                     messages=self.message_history,
                 )
         except openai.BadRequestError as e:
-            if "Unsupported parameter: 'temperature'" in str(e):
+            if "Unsupported" in str(e):
                 self.model_supports_temperature[self.model] = False
                 # Retry without temperature
                 response = openai.chat.completions.create(
