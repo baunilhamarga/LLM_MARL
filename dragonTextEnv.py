@@ -301,20 +301,20 @@ class DragonTextEnv():
         return text
 
     def decode_action(self, chat_output):
-        lower = chat_output.lower()
+        lower = chat_output.lower().replace("“", '"').replace("”", '"')
         if 'action selection' in lower:
             lower = lower.split('action selection', 1)[1]  # keep text to the right of 'action selection'
-        tokens = ''.join(ch if ch.isalpha() else ' ' for ch in lower).split()  # tokenisation by spaces and removing non-alpha characters
         
         Action = self.env.action_enum
         comm = ''
         action = None
         if self.act_and_comm:
-            if len(chat_output.split('Message to Team:')) > 1 and len(chat_output.split('"')) > 1:
-                comm = chat_output.split('Message to Team:')[1].split('"')[1]
-                chat_output = chat_output.split('Message to Team:')[0]+ chat_output.split('Message to Team:')[1].split('"')[2]
+            if len(lower.split('message to team:')) > 1 and len(lower.split('"')) > 1:
+                comm = lower.split('message to team:')[1].split('"')[1]
+                lower = lower.split('message to team:')[0]+ lower.split('message to team:')[1].split('"')[2]
             else:
                 comm = ''
+            tokens = ''.join(ch if ch.isalpha() else ' ' for ch in lower).split()  # tokenisation by spaces and removing non-alpha characters
             if 'inspect' in lower:
                 action = Action.inspect_bomb
             elif 'move to room' in lower:
