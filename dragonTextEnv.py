@@ -583,7 +583,10 @@ class ChatAgent():
                         log_file.write(json.dumps(log_entry) + "\n")
             except Exception as e:
                 print(f"Logging failed: {e}")
-            self._bump_usage(response.usage)
+            try:
+                self._bump_usage(response.usage)
+            except Exception as e:
+                print(f"Usage bumping failed: {e}")
         return response.choices[0].message.content
 
     def update_history(self,text):
