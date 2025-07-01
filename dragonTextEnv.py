@@ -28,6 +28,7 @@ class DragonTextEnv():
         self.allow_comm = allow_comm
         self.act_and_comm = act_and_comm
         self.tool_per_agent = tool_per_agent
+        self.cutoff_activated = False
 
         self.env = MiniDragonEnv(mission_length = 999,
                         recon_phase_length=0,
@@ -52,7 +53,7 @@ class DragonTextEnv():
                            tool_allocation = {'alpha':{Tool.red:99},'bravo':{Tool.green:99},'charlie':{Tool.blue:99}})
 
 
-    def step(self,agent_id, round, initial_actions, communications):
+    def step(self,agent_id, round, initial_actions, communications, tom_questions=None):
         # action is object
         # agent is str index
         valid_action = True
@@ -183,7 +184,11 @@ class DragonTextEnv():
             for a in communications.keys():
                 text += 'Player {id}: "{comm}". '.format(id=a, comm=communications[a])
 
-
+            if tom_questions is not None and not self.cutoff_activated:
+                text += 'Before sending your message to the team, consider the following questions (do not answer them): '
+                for i, q in enumerate(tom_questions):
+                    if q is not None:
+                        text += '{index}: "{question}". '.format(index=i+1, question=q)
 
         # print(text)
         return obs, reward, done, info, text, valid_action
@@ -314,6 +319,8 @@ class DragonTextEnv():
                 lower = lower.split('message to team:')[0]+ lower.split('message to team:')[1].split('"')[2]
             else:
                 comm = ''
+            if self.cutoff_activated:
+                comm = 'Not available due to communication cutoff.'
             tokens = ''.join(ch if ch.isalpha() else ' ' for ch in lower).split()  # tokenisation by spaces and removing non-alpha characters
             if 'inspect' in lower:
                 action = Action.inspect_bomb
@@ -455,7 +462,7 @@ Tools: Each player is equipped with two color-coded wire cutters. Player Alpha h
 Actions: Each round, you can opt to do one of the following: 1) Move to an adjacent room, 2) Inspect a bomb's phase sequence in your current room, or 3) Apply your wire cutters to a bomb in the current room. \
 Communications: In addition to selecting an action to take from the above list, you can also send communication message texts to both of your teammates in each round. The message text you sent will be shared with both of your teammates in their observation in the next round. \
 Observation: While you can only see what's in your current room and read text messages from teammates. You'll also be informed of the current round number, team score and the current location of your teammates. Your teammates have the same observability as you. They will not be able to know your action and its consequences unless you explicitly communicate. \
-Extra challenge: at each round, there is a chance to lose communication with your teamates for the duration of the entire round. You will be informed with the message 'Communication cutoff'. In this scenario, you should choose your next action based on all previous information and, when communication is available again in the next round, you should add to your regular team message any relevant information that your teamates might have missed during the cutoff. \
+Extra challenge: at each round, there is a chance to lose communication with your teamates for the duration of the entire round. You will be informed with the message 'Communication cutoff: no communication available this round'. In this scenario, you should choose your next action based on all previous information and, when communication is available again in the next round, you should add to your regular team message any relevant information that your teamates might have missed during the cutoff. \
 You will be playing as Player {agent_id}. To facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules. Feel free to ask clarifying questions if needed. I'll supply the necessary information as we progress. Are you ready to take on this explosive challenge?"
 
 # BACKGROUND_PROMPT = "Welcome to our interactive text game! In this game, you'll assume the role of a specialist on a search and rescue team. Alongside two other players, you'll navigate a five-room environment with a mission to defuse five hidden bombs. The Map: Imagine a network of rooms represented by a connected graph where each node corresponds to a room, and the edges between nodes depict hallways. The rooms are numbered 0, 3, 6, 5, and 8. Room 0 is connected to all other rooms. Room 5 shares a hallway with room 6, room 3 is linked to room 8, and room 8 is also connected with room 6. You can only travel to adjacent, directly connected rooms each turn. The Challenge: Scattered among these rooms are five bombs, each coded with different phases represented by colors. To defuse them, you'll need to use the correct wire-cutting tools in the correct sequence. There are one-phase, two-phase, and three-phase bombs, needing 1, 2, or 3 color-coded tool applications in sequence to disarm. For instance, a bomb with a red-green phase sequence requires the red tool first, then the green one. The challenge is that the bomb locations and sequences are unknown to players at the start. Your Tools: Each player is equipped with two color-coded wire cutters. As player Alpha, you have red and green tools, player Bravo wields green and blue, and player Charlie possesses blue and red. Your Actions: Each round, you can opt to do one of the following: 1) Move to an adjacent room, 2) Inspect a bomb's phase sequence in your current room, 3) Apply your wire cutters to a bomb, or 4) send text messages to both of your teammates. Observation: While you can only see what's in your current room and read text messages from teammates. You'll also be informed of the current round number. Any successful bomb defusal, along with the accumulated team score, is broadcasted to all players. Points are awarded based on the number of tools used for defusing a bomb, with each tool use worth 10 points. Remember, your actions must adhere strictly to these rules. Feel free to ask clarifying questions if needed. I'll supply the necessary information as we progress. You will be playing as Player {agent_id}. Are you ready to take on this explosive challenge?"
@@ -472,8 +479,11 @@ UPDATE_PROMPT = "Please update your belief state based on the above observation,
 
 INITIAL_PROMPT = "Given the above belief state, what is your next action?"
 
+
+CUTOFF = 'Communication cutoff: no communication available this round'
+
 class ChatAgent():
-    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, cutoff = False, log_chat=True, log_path="data/chat_log.json", memory_size=2):
+    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False):
         self.agent_id = agent_id
         self.model = model
         self.temperature=temperature
@@ -482,12 +492,17 @@ class ChatAgent():
         self.log_chat=log_chat
         self.log_path = log_path
         self.memory_size = memory_size
+        self.cutoff = cutoff
+        self.cutoff_activated = False
 
         self.belief = belief
         # self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
         self.allow_comm = allow_comm
         if self.allow_comm:
-            BACKGROUND_PROMPT = BACKGROUND_PROMPT_NEW
+            if self.cutoff:
+                BACKGROUND_PROMPT = BACKGROUND_PROMPT_CUTOFF
+            else:
+                BACKGROUND_PROMPT = BACKGROUND_PROMPT_NEW
             self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
         else:
             BACKGROUND_PROMPT = BACKGROUND_PROMPT_NOCOMM
@@ -604,13 +619,17 @@ class ChatAgent():
                 self.message_history.append({"role": "user", "content": text})
                 new_belief = self.makeAPIcall()
                 self.message_history.pop()
-                self.message_history.append({"role": "user", "content": new_belief+INITIAL_PROMPT})
+                content = new_belief
+                if self.allow_comm and self.cutoff_activated:
+                    content += ' ' + CUTOFF
+                self.message_history.append({"role": "user", "content": content+' '+INITIAL_PROMPT})
 
             # new_belief = self.update_belief(text)
             # self.message_history.append({"role": "user", "content": new_belief+INITIAL_PROMPT})
 
         else:
-
+            if self.allow_comm and self.cutoff_activated:
+                text += ' ' + CUTOFF
             text += "Given the above observation, what is your next action?"
             print('env', text)
             self.message_history.append({"role": "user", "content": text})
@@ -618,7 +637,7 @@ class ChatAgent():
 
 
         # delete oldest round in memory
-        if self.memory_size != -1 and len(self.message_history)>self.memory_size*2+2: # message_history: index 0 and 1 are game rules + 2 items per round (belief and action)
+        if self.memory_size != -1 and len(self.message_history)>2+self.memory_size*2+2: # message_history: index 0 and 1 are game rules + 2 items per round (belief and action) + 2 items of the current round (belief and action) + 1 observation after action
             self.message_history.pop(2)
             self.message_history.pop(2)
         return new_belief

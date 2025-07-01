@@ -39,6 +39,8 @@ parser.add_argument('--cutoff', type = float, default=0.0,
                     help='probability of communication cutoff every round, e.g., 0.5 means commnunication in not available 50% of the time.')
 parser.add_argument('--memory_size', type = int, default=2,
                     help='how many previous rounds to keep in memory for each agent, e.g., 2 means the agent can access the last 2 rounds of history. -1 means no limit.')
+parser.add_argument('--tom_reasoning', action='store_true', default=False,
+                    help='enable theory of mind reasoning for agents, i.e., agents are asked questions about other agents\' knowledge and belief before communicatig')
 
 # model
 args = parser.parse_args()
@@ -70,6 +72,10 @@ allow_comm = args.allow_comm
 model_name = args.model
 act_and_comm = True
 memory_size = args.memory_size
+cutoff = args.cutoff
+tom_reasoning = args.tom_reasoning
+
+np.random.seed(seed)
 
 env = DragonTextEnv(seed = seed,include_agent_action = args.include_agent_action,allow_comm = allow_comm,act_and_comm = act_and_comm,tool_per_agent = args.tool_per_agent)
 Action = env.env.action_enum
@@ -77,9 +83,9 @@ obs = env.env._get_obs()
 info = {}
 initial_node = str(env.env.agents['alpha'].node.id)
 initial_bomb = str(env.env.agents['alpha'].bomb.id)
-chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size),
-               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size),
-               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size)}
+chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15),
+               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15),
+               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15)}
 initial_actions = {'alpha':Action.go_to(int(initial_node)),'bravo':Action.go_to(int(initial_node)),'charlie':Action.go_to(int(initial_node))}
 communications = {'alpha':'None','bravo':'None','charlie':'None'}
 
@@ -89,6 +95,7 @@ done = {'__all__':False}
 round = 1
 invalid_actions = 0
 total_actions = 0
+tom_questions = None
 
 cols = ['round', 'agent_id',
  'chat_output', 'action', 'comm','obs_text','new_belief','ToM1st','ToM2nd','ToM3rd', 'ToM1st_q', 'ToM2nd_q', 'ToM3rd_q', 'ground_truth']
@@ -108,8 +115,11 @@ while not done['__all__'] and round <= args.max_step:
     print(f"{60*'-'}Start of Round {round}:{60*'-'}")
     env.env.render(overlay_graph=True, save_path=os.path.join(renders_path, f'round_{round}.pdf'))
     #input(f"Press Enter to continue")
+    cutoff_activated = np.random.random() < cutoff
     for agent_id in chat_agents.keys():
         chat_agent = chat_agents[agent_id]
+        chat_agent.cutoff_activated = cutoff_activated
+        env.cutoff_activated = chat_agent.cutoff_activated
         if round == 1 and not belief:
             _, reward, done, info, obs_text, valid_action = env.step(agent_id, 0,initial_actions, communications)
 
@@ -121,7 +131,10 @@ while not done['__all__'] and round <= args.max_step:
         initial_actions[agent_id], communications[agent_id] = env.decode_action(chat_output[agent_id])
         # initial_actions[agent_id], communications[agent_id] = env.decode_action_API(chat_output[agent_id])
 
-        _, reward, done, info, obs_text, valid_action = env.step(agent_id, round,initial_actions, communications)
+        if tom_reasoning and tom_questions is not None and not env.cutoff_activated:
+            _, reward, done, info, obs_text, valid_action = env.step(agent_id, round,initial_actions, communications, tom_questions)
+        else:
+            _, reward, done, info, obs_text, valid_action = env.step(agent_id, round,initial_actions, communications)
 
         if not valid_action:
             print(f"Invalid action for agent {agent_id} in round {round}.")
@@ -227,6 +240,8 @@ while not done['__all__'] and round <= args.max_step:
                 ToM1st = None
                 ToM2nd = None
                 ToM3rd = None
+            
+            tom_questions = [ToM1st_q, ToM2nd_q, ToM3rd_q]
 
 
 
