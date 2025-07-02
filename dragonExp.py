@@ -152,6 +152,9 @@ while not done['__all__'] and round <= args.max_step:
         ToM1st = None
         ToM2nd = None
         ToM3rd = None
+        ToM1st_q = None
+        ToM2nd_q = None
+        ToM3rd_q = None
 
         if ToM:
             target_id = np.random.choice([x for x in chat_agents.keys() if x != agent_id])
@@ -160,6 +163,9 @@ while not done['__all__'] and round <= args.max_step:
                 ToM1st = None
                 ToM2nd = None
                 ToM3rd = None
+                ToM1st_q = None
+                ToM2nd_q = None
+                ToM3rd_q = None
 
             elif initial_actions[agent_id].node() is not None:
                 if agent.node.id != initial_actions[agent_id].node().id:
@@ -235,11 +241,17 @@ while not done['__all__'] and round <= args.max_step:
                     ToM1st = None
                     ToM2nd = None
                     ToM3rd = None
+                    ToM1st_q = None
+                    ToM2nd_q = None
+                    ToM3rd_q = None
             else:
                 ground_truth =None
                 ToM1st = None
                 ToM2nd = None
                 ToM3rd = None
+                ToM1st_q = None
+                ToM2nd_q = None
+                ToM3rd_q = None
             
             tom_questions = [ToM1st_q, ToM2nd_q, ToM3rd_q]
 
