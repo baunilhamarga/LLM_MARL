@@ -482,8 +482,75 @@ INITIAL_PROMPT = "Given the above belief state, what is your next action?"
 
 CUTOFF = 'Communication cutoff: no communication available this round'
 
+
+BACKGROUND_PROMPT_NEW_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n----------------  ROLE AND OBJECTIVE  ----------------\n* Defuse all 5 hidden bombs as fast as possible.\n* A team earns 10 x (number of phases) points for each bomb defused.\n* Maximize the final team score.\n\n----------------  ENVIRONMENT MAP  ----------------  \nThe facility is a connected graph of five rooms:\nRoom 0: 3 5 6 8\nRoom 3: 0 8\nRoom 5: 0 6\nRoom 6: 0 5 8\nRoom 8: 0 3 6\nYou may move only to rooms listed as directly connected to your current location.\n\n----------------  BOMB TYPES  ----------------\n* Bombs may have 1, 2, or 3 color phases. Defuse them by applying the matching colored tools in order.\n\n----------------  TOOLS PER PLAYER  ----------------\n* Alpha   - red, green\n* Bravo   - green, blue\n* Charlie - blue, red\n\n----------------  VALID ACTIONS  ----------------\n1. Move to an adjacent room     -> Move to Room X\n2. Inspect a bomb's phase list  -> Inspect Bomb\n3. Apply a wire cutter tool     -> Apply <Color> Tool\n\n----------------  COMMUNICATION  ----------------\n* Each round you may append ONE message to teammates (they will read it next round).\n\n----------------  OBSERVATION INFO  ----------------  \nAt the start of every round you learn:\n* Current round number and cumulative team score\n* Your room contents (bombs, players)\n* Locations of teammates\n* Messages sent in the previous round\n\n----------------  REPLY FORMAT  ----------------  \nTo facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules.\nAre you ready to begin?\""
+
+
+BACKGROUND_PROMPT_CUTOFF_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n----------------  ROLE AND OBJECTIVE  ----------------\n* Defuse all 5 hidden bombs as fast as possible.\n* A team earns 10 x (number of phases) points for each bomb defused.\n* Maximize the final team score.\n\n----------------  ENVIRONMENT MAP  ----------------  \nThe facility is a connected graph of five rooms:\nRoom 0: 3 5 6 8\nRoom 3: 0 8\nRoom 5: 0 6\nRoom 6: 0 5 8\nRoom 8: 0 3 6\nYou may move only to rooms listed as directly connected to your current location.\n\n----------------  BOMB TYPES  ----------------\n* Bombs may have 1, 2, or 3 color phases. Defuse them by applying the matching colored tools in order.\n\n----------------  TOOLS PER PLAYER  ----------------\n* Alpha   - red, green\n* Bravo   - green, blue\n* Charlie - blue, red\n\n----------------  VALID ACTIONS  ----------------\n1. Move to an adjacent room     -> Move to Room X\n2. Inspect a bomb's phase list  -> Inspect Bomb\n3. Apply a wire cutter tool     -> Apply <Color> Tool\n\n----------------  COMMUNICATION  ----------------\n* Each round you may append ONE message to teammates (they will read it next round).\n* If communication is cut you will receive: \"Communication cutoff: no communication available this round\".\n  - Continue acting based on previous information.\n  - When communication returns, share any information missed during the cutoff.\n\n----------------  OBSERVATION INFO  ----------------  \nAt the start of every round you learn:\n* Current round number and cumulative team score\n* Your room contents (bombs, players)\n* Locations of teammates\n* Messages sent in the previous round\n\n----------------  REPLY FORMAT  ----------------  \nTo facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules.\nAre you ready to begin?\""
+
+
+INITIAL_BELIEF_IMPROVED = "----------------  BELIEF STATE  ----------------  \n\
+Role: Player {agent_id}\n\
+Current round: 0   |   Team score: 0\n\
+\n\
+----------------  POSITION  ----------------  \n\
+You are in Room {initial_node}\n\
+Other players here: alpha, bravo, charlie\n\
+\n\
+----------------  ROOM CONTENTS  ----------------  \n\
+Bomb {initial_bomb}: sequence UNKNOWN\n\
+No other bombs detected in this room.\n\
+\n\
+----------------  TEAMMATE LOCATIONS  ----------------  \n\
+alpha   - Room {initial_node}\n\
+bravo   - Room {initial_node}\n\
+charlie - Room {initial_node}\n\
+\n\
+----------------  MAP (adjacency list)  ----------------  \n\
+Each line shows: Room : directly connected rooms\n\
+0 : 3 5 6 8\n\
+3 : 0 8\n\
+5 : 0 6\n\
+6 : 0 5 8\n\
+8 : 0 3 6\n\
+\n\
+----------------  KNOWN BOMBS  ----------------  \n\
+Bomb {initial_bomb}  |  Room {initial_node}  |  Phase list: UNKNOWN\n\
+(4 bombs remain unlocated)\n\
+\n\
+----------------  RECENT MESSAGES  ----------------  \n\
+alpha   : None\n\
+bravo   : None\n\
+charlie : None\n\
+\n\
+----------------  TOOL INVENTORY  ----------------  \n\
+alpha   - red, green\n\
+bravo   - green, blue\n\
+charlie - red, blue\n\
+\n\
+----------------  ACTION SYNTAX  ----------------  \n\
+Move         : Move to Room X\n\
+Inspect Bomb : Inspect Bomb\n\
+Apply tool   : Apply <Color> Tool\n\
+Send message : Message to Team: \"...\"\n\
+--------------------------------------------------\""
+
+
+TIPS = "GENERAL COORDINATION AND MEMORY TIPS:\n\
+1. Inspection Rule: If an uninspected bomb is in your current room **and two or more teammates are present**, ONLY the teammate whose call-sign comes first alphabetically performs \"Inspect Bomb\" (unless a different plan was clearly agreed). Everyone else should spend the turn on a higher-value task (move, cut, etc.).\n\
+2. Memory Rule: When asked to update your belief state, add any other useful information not already contained in the previous belief state. Examples: rooms visited, bomb locations, each bomb's phase list and progress.\n\
+3. Bomb Counter Rule: Five bombs exist at the start. Track how many remain. Pay attention to the communication messages to keep track of bombs defused, location or progress towards defusal.\n\
+4. No Duplicate Tools Rule: Before applying a tool, check messages and your belief state to be sure a teammate will not apply the same tool to the same bomb in the same round. Assume that the teammate whose call-sign comes first alphabetically will perform a defusal action if he is in the same room and if he has the corresponding tool.\n\
+5. Sequence Coordination Rule: After every successful cut on a multi-phase bomb, broadcast the remaining color sequence. The teammate with the next required color should position in that room; others should keep exploring.\n\
+5. Same Round Coordination Rule: Assume agents whose call-sign comes first alphabetically will act before you and will apply their tool if they can and use this to coordinate your tool use. Example: In a given round, agents A, B and C are in the same room with a bomb with know sequence green-red-blue. If A has the green tool, B can expect A is going to use it and try to use red if he has the red tool. The same applies to C.\n\
+6. Exploration Rule: Do not cluster without reason. When no bomb needs multi-player attention, each teammate should move to a different unexplored or partially explored room to maximise information gain.\n\
+7. Cutoff Recovery Rule: If you receive \"Communication cutoff\", continue acting based on memory. When comms return, send a SUMMARY listing all actions and observations since the last successful message.\n\
+8. Never assume your belief state is ground truth: correct false information if directly contradicted by new evidence.\n"
+
+
+
 class ChatAgent():
-    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False):
+    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False, improved = False, tips = False):
         self.agent_id = agent_id
         self.model = model
         self.temperature=temperature
@@ -494,16 +561,29 @@ class ChatAgent():
         self.memory_size = memory_size
         self.cutoff = cutoff
         self.cutoff_activated = False
+        self.improved = improved
+        self.tips = tips
 
         self.belief = belief
         # self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
         self.allow_comm = allow_comm
         if self.allow_comm:
             if self.cutoff:
-                BACKGROUND_PROMPT = BACKGROUND_PROMPT_CUTOFF
+                if self.improved:
+                    BACKGROUND_PROMPT = BACKGROUND_PROMPT_CUTOFF_IMPROVED
+                else:
+                    BACKGROUND_PROMPT = BACKGROUND_PROMPT_CUTOFF
             else:
-                BACKGROUND_PROMPT = BACKGROUND_PROMPT_NEW
-            self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
+                if self.improved:
+                    BACKGROUND_PROMPT = BACKGROUND_PROMPT_NEW_IMPROVED
+                else:
+                    BACKGROUND_PROMPT = BACKGROUND_PROMPT_NEW
+            if self.tips:
+                BACKGROUND_PROMPT += '\n\n' + TIPS
+            if self.improved:
+                self.last_belief = INITIAL_BELIEF_IMPROVED.format(agent_id=agent_id, initial_bomb=initial_bomb,initial_node=initial_node)
+            else:
+                self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
         else:
             BACKGROUND_PROMPT = BACKGROUND_PROMPT_NOCOMM
             self.last_belief = INITIAL_BELIEF_NOCOMM.format(agent_id=agent_id, initial_bomb=initial_bomb,

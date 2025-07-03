@@ -41,6 +41,10 @@ parser.add_argument('--memory_size', type = int, default=2,
                     help='how many previous rounds to keep in memory for each agent, e.g., 2 means the agent can access the last 2 rounds of history. -1 means no limit.')
 parser.add_argument('--tom_reasoning', action='store_true', default=False,
                     help='enable theory of mind reasoning for agents, i.e., agents are asked questions about other agents\' knowledge and belief before communicatig')
+parser.add_argument('--improved', action='store_true', default=False,
+                    help='enable improved agent behavior')
+parser.add_argument('--tips', action='store_true', default=False,
+                    help='enable tips for agents')
 
 # model
 args = parser.parse_args()
@@ -74,6 +78,8 @@ act_and_comm = True
 memory_size = args.memory_size
 cutoff = args.cutoff
 tom_reasoning = args.tom_reasoning
+improved = args.improved
+tips = args.tips
 
 np.random.seed(seed)
 
@@ -83,9 +89,9 @@ obs = env.env._get_obs()
 info = {}
 initial_node = str(env.env.agents['alpha'].node.id)
 initial_bomb = str(env.env.agents['alpha'].bomb.id)
-chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15),
-               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15),
-               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15)}
+chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips),
+               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips),
+               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips)}
 initial_actions = {'alpha':Action.go_to(int(initial_node)),'bravo':Action.go_to(int(initial_node)),'charlie':Action.go_to(int(initial_node))}
 communications = {'alpha':'None','bravo':'None','charlie':'None'}
 

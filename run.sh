@@ -12,3 +12,22 @@ python dragonExp.py \
     --cutoff 0 \
     --memory_size 2 \
     --seed 3
+
+# Default arguments
+#    --save_path data/ \
+#    --seed 0 \
+#    --model gpt-4-turbo-preview \
+#    --tool_per_agent 2 \
+#    --temperature 0 \
+#    --max_step 30 \
+#    --exp_name default_exp \
+#    --cutoff 0.0 \
+#    --memory_size 2
+# Optional flags (default: off, add to enable):
+#   --tom
+#   --belief
+#   --allow_comm
+#   --include_agent_action
+#   --tom_reasoning
+#   --improved
+#   --tips
