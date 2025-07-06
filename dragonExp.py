@@ -262,7 +262,7 @@ while not done['__all__'] and round <= args.max_step:
             tom_agents[agent_id] = (tom_questions, tom_answers)
 
     cutoff_activated = np.random.random() < cutoff
-    env.cutoff_activated = chat_agent.cutoff_activated 
+    env.cutoff_activated = cutoff_activated 
     # Update beliefs after all agents have acted       
     for agent_id in chat_agents.keys():
         chat_agent.cutoff_activated = env.cutoff_activated
