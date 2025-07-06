@@ -29,6 +29,7 @@ class DragonTextEnv():
         self.act_and_comm = act_and_comm
         self.tool_per_agent = tool_per_agent
         self.cutoff_activated = False
+        self.round = 1
 
         self.env = MiniDragonEnv(mission_length = 999,
                         recon_phase_length=0,
@@ -53,13 +54,14 @@ class DragonTextEnv():
                            tool_allocation = {'alpha':{Tool.red:99},'bravo':{Tool.green:99},'charlie':{Tool.blue:99}})
 
 
-    def step(self,agent_id, round, initial_actions, communications, tom_questions=None):
+    def step(self,agent_id, round, initial_actions, communications, tom_questions=None, tom_reasoning=False):
         # action is object
         # agent is str index
         valid_action = True
         reward = {agent_id: 0 for agent_id in self.env.agents.keys()}
         info = {agent_id: {} for agent_id in self.env.agents.keys()}
         prev_agent_health = {agent.id: agent.health for agent in self.env.agents.values()}
+        self.round = round
 
         action = initial_actions[agent_id]
         obs_text = 'Your action is invalid.'
@@ -161,9 +163,9 @@ class DragonTextEnv():
             room_id=room_id, room_agents=room_agents, room_bombs=room_bombs)
 
         text = 'Your observation is: '
-        text += 'Round: {timestep}. '.format(timestep=str(round))
+        text += 'Round: {timestep}. '.format(timestep=str(round+1))
         text += 'Total team score: {score}. '.format(score=str(self.env.score))
-        text += 'Results: ' + obs_text + ' '
+        text += f"Previous action results ({action.name.replace('_', ' ') if action != None else 'Invalid'}): " + obs_text + ' '
         text += 'Room contents: '+ room_contents+ ' '
         # text += 'Teammate Locations: ' + team_location_text + ' '
 
@@ -177,23 +179,23 @@ class DragonTextEnv():
                 elif initial_actions[a].name == 'remove_help_beacon':
                     text += 'Player {id}: "{action}". '.format(id=a, action='Invalid action.')
                 else:
-                    text += 'Player {id}: "{action}". '.format(id=a, action=initial_actions[a].name.replace('_', ' '))
+                    text += 'Player {id}: "{action}". '.format(action.name.replace('_', ' ') if action != None else 'Invalid')
 
         if self.allow_comm:
             text += 'Communication messages sent by your teammates: '
             for a in communications.keys():
                 text += 'Player {id}: "{comm}". '.format(id=a, comm=communications[a])
 
-            if tom_questions is not None and not self.cutoff_activated:
+            if tom_questions is not None and not self.cutoff_activated and tom_reasoning:
                 text += 'Before sending your message to the team, consider the following questions (do not answer them): '
                 for i, q in enumerate(tom_questions):
                     if q is not None:
                         text += '{index}: "{question}". '.format(index=i+1, question=q)
 
         # print(text)
-        return obs, reward, done, info, text, valid_action
+        return obs, reward, done, info, text, valid_action, obs_text
 
-    def step_text(self,agent_id, round, initial_actions, communications):
+    def   step_text(self,agent_id, round, initial_actions, communications, results=''):
         # action is object
         # agent is str index
 
@@ -277,9 +279,9 @@ class DragonTextEnv():
             room_id=room_id, room_agents=room_agents, room_bombs=room_bombs)
 
         text = 'Your observation is: '
-        text += 'Round: {timestep}. '.format(timestep=str(round))
+        text += 'Round: {timestep}. '.format(timestep=str(round+1))
         text += 'Total team score: {score}. '.format(score=str(self.env.score))
-        text += 'Results: ' + obs_text + ' '
+        text += f"Previous action results ({action.name.replace('_', ' ') if action != None else 'Invalid'}): " + results + ' '
         text += 'Room contents: '+ room_contents+ ' '
         # text += 'Teammate Locations: ' + team_location_text + ' '
 
@@ -293,7 +295,7 @@ class DragonTextEnv():
                 elif initial_actions[a].name == 'remove_help_beacon':
                     text += 'Player {id}: "{action}". '.format(id=a, action='Invalid action.')
                 else:
-                    text += 'Player {id}: "{action}". '.format(id=a, action=initial_actions[a].name.replace('_', ' '))
+                    text += 'Player {id}: "{action}". '.format(id=a, action=action.name.replace('_', ' ') if action != None else 'Invalid')
 
         if self.allow_comm:
             text += 'Communication messages sent by your teammates: '
@@ -477,7 +479,7 @@ INITIAL_BELIEF_NOCOMM = "Below is your current belief about game state based on 
 UPDATE_PROMPT = "Please update your belief state based on the above observation, and send me your results in the same format as previously. DO NOT add additional explanations. Return your answer begining with: 'Below is your current belief'"
 
 
-INITIAL_PROMPT = "Given the above belief state, what is your next action?"
+INITIAL_PROMPT = "Given the above belief state, {agent_id}, what is your next action?"
 
 
 CUTOFF = 'Communication cutoff: no communication available this round'
@@ -486,12 +488,28 @@ CUTOFF = 'Communication cutoff: no communication available this round'
 BACKGROUND_PROMPT_NEW_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n----------------  ROLE AND OBJECTIVE  ----------------\n* Defuse all 5 hidden bombs as fast as possible.\n* A team earns 10 x (number of phases) points for each bomb defused.\n* Maximize the final team score.\n\n----------------  ENVIRONMENT MAP  ----------------  \nThe facility is a connected graph of five rooms:\nRoom 0: 3 5 6 8\nRoom 3: 0 8\nRoom 5: 0 6\nRoom 6: 0 5 8\nRoom 8: 0 3 6\nYou may move only to rooms listed as directly connected to your current location.\n\n----------------  BOMB TYPES  ----------------\n* Bombs may have 1, 2, or 3 color phases. Defuse them by applying the matching colored tools in order.\n\n----------------  TOOLS PER PLAYER  ----------------\n* Alpha   - red, green\n* Bravo   - green, blue\n* Charlie - blue, red\n\n----------------  VALID ACTIONS  ----------------\n1. Move to an adjacent room     -> Move to Room X\n2. Inspect a bomb's phase list  -> Inspect Bomb\n3. Apply a wire cutter tool     -> Apply <Color> Tool\n\n----------------  COMMUNICATION  ----------------\n* Each round you may append ONE message to teammates (they will read it next round).\n\n----------------  OBSERVATION INFO  ----------------  \nAt the start of every round you learn:\n* Current round number and cumulative team score\n* Your room contents (bombs, players)\n* Locations of teammates\n* Messages sent in the previous round\n\n----------------  REPLY FORMAT  ----------------  \nTo facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules.\nAre you ready to begin?\""
 
 
-BACKGROUND_PROMPT_CUTOFF_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n----------------  ROLE AND OBJECTIVE  ----------------\n* Defuse all 5 hidden bombs as fast as possible.\n* A team earns 10 x (number of phases) points for each bomb defused.\n* Maximize the final team score.\n\n----------------  ENVIRONMENT MAP  ----------------  \nThe facility is a connected graph of five rooms:\nRoom 0: 3 5 6 8\nRoom 3: 0 8\nRoom 5: 0 6\nRoom 6: 0 5 8\nRoom 8: 0 3 6\nYou may move only to rooms listed as directly connected to your current location.\n\n----------------  BOMB TYPES  ----------------\n* Bombs may have 1, 2, or 3 color phases. Defuse them by applying the matching colored tools in order.\n\n----------------  TOOLS PER PLAYER  ----------------\n* Alpha   - red, green\n* Bravo   - green, blue\n* Charlie - blue, red\n\n----------------  VALID ACTIONS  ----------------\n1. Move to an adjacent room     -> Move to Room X\n2. Inspect a bomb's phase list  -> Inspect Bomb\n3. Apply a wire cutter tool     -> Apply <Color> Tool\n\n----------------  COMMUNICATION  ----------------\n* Each round you may append ONE message to teammates (they will read it next round).\n* If communication is cut you will receive: \"Communication cutoff: no communication available this round\".\n  - Continue acting based on previous information.\n  - When communication returns, share any information missed during the cutoff.\n\n----------------  OBSERVATION INFO  ----------------  \nAt the start of every round you learn:\n* Current round number and cumulative team score\n* Your room contents (bombs, players)\n* Locations of teammates\n* Messages sent in the previous round\n\n----------------  REPLY FORMAT  ----------------  \nTo facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules.\nAre you ready to begin?\""
+BACKGROUND_PROMPT_CUTOFF_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n\
+----------------  ROLE AND OBJECTIVE  ----------------\n\
+* Defuse all 5 hidden bombs as fast as possible.\n* A team earns 10 x (number of phases) points for each bomb defused.\n* Maximize the final team score.\n\n\
+----------------  ENVIRONMENT MAP  ----------------  \n\
+The facility is a connected graph of five rooms:\nRoom 0: 3 5 6 8\nRoom 3: 0 8\nRoom 5: 0 6\nRoom 6: 0 5 8\nRoom 8: 0 3 6\nYou may move only to rooms listed as directly connected to your current location.\n\n\
+----------------  BOMB TYPES  ----------------\n\
+* Bombs may have 1, 2, or 3 color phases. Defuse them by applying the matching colored tools in order.\n\n\
+----------------  TOOLS PER PLAYER  ----------------\n\
+* Alpha   - red, green\n* Bravo   - green, blue\n* Charlie - blue, red\n\n\
+----------------  VALID ACTIONS  ----------------\n\
+1. Move to an adjacent room     -> Move to Room X\n2. Inspect a bomb's phase list  -> Inspect Bomb\n3. Apply a wire cutter tool     -> Apply <Color> Tool\n\n\
+----------------  COMMUNICATION  ----------------\n\
+* Each round you may append ONE message to teammates (they will read it next round).\n* If communication is cut you will receive: \"Communication cutoff: no communication available this round\".\n  - Continue acting based on previous information.\n  - When communication returns, share any information missed during the cutoff.\n\n\
+----------------  OBSERVATION INFO  ----------------  \n\
+At the start of every round you learn:\n* Current round number and cumulative team score\n* Your room contents (bombs, players)\n* Locations of teammates\n* Messages sent in the previous round\n\n\
+----------------  REPLY FORMAT  ----------------  \n\
+To facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules.\nAre you ready to begin?\""
 
 
 INITIAL_BELIEF_IMPROVED = "----------------  BELIEF STATE  ----------------  \n\
 Role: Player {agent_id}\n\
-Current round: 0   |   Team score: 0\n\
+Current round: 1   |   Team score: 0\n\
 \n\
 ----------------  POSITION  ----------------  \n\
 You are in Room {initial_node}\n\
@@ -500,6 +518,13 @@ Other players here: alpha, bravo, charlie\n\
 ----------------  ROOM CONTENTS  ----------------  \n\
 Bomb {initial_bomb}: sequence UNKNOWN\n\
 No other bombs detected in this room.\n\
+Contents of all rooms:\n  \
+0 :   \n\
+3 :   \n\
+5 :   \n\
+6 :   \n\
+8 :   \n\
+\n\
 \n\
 ----------------  TEAMMATE LOCATIONS  ----------------  \n\
 alpha   - Room {initial_node}\n\
@@ -507,16 +532,16 @@ bravo   - Room {initial_node}\n\
 charlie - Room {initial_node}\n\
 \n\
 ----------------  MAP (adjacency list)  ----------------  \n\
-Each line shows: Room : directly connected rooms\n\
-0 : 3 5 6 8\n\
-3 : 0 8\n\
-5 : 0 6\n\
-6 : 0 5 8\n\
-8 : 0 3 6\n\
+Each line shows: Room : directly connected rooms  \n\
+0 : 3 5 6 8  \n\
+3 : 0 8  \n\
+5 : 0 6  \n\
+6 : 0 5 8  \n\
+8 : 0 3 6  \n\
 \n\
 ----------------  KNOWN BOMBS  ----------------  \n\
-Bomb {initial_bomb}  |  Room {initial_node}  |  Phase list: UNKNOWN\n\
-(4 bombs remain unlocated)\n\
+Bomb {initial_bomb}  |  Room {initial_node}  |  Phase list: UNKNOWN | Status: UNKNOWN\n\
+(4 bombs remain unlocated, 0 bombs defused)\n\
 \n\
 ----------------  RECENT MESSAGES  ----------------  \n\
 alpha   : None\n\
@@ -528,24 +553,28 @@ alpha   - red, green\n\
 bravo   - green, blue\n\
 charlie - red, blue\n\
 \n\
+----------------  INFORMATON I SHOULD SHARE  ----------------  \n\
+\n\
 ----------------  ACTION SYNTAX  ----------------  \n\
 Move         : Move to Room X\n\
 Inspect Bomb : Inspect Bomb\n\
 Apply tool   : Apply <Color> Tool\n\
-Send message : Message to Team: \"...\"\n\
+Send message : Message to Team: \"...\"  \n\
+There is no standby action, but you can inspect a bomb if there is any in the room.\
 --------------------------------------------------\""
 
 
 TIPS = "GENERAL COORDINATION AND MEMORY TIPS:\n\
 1. Inspection Rule: If an uninspected bomb is in your current room **and two or more teammates are present**, ONLY the teammate whose call-sign comes first alphabetically performs \"Inspect Bomb\" (unless a different plan was clearly agreed). Everyone else should spend the turn on a higher-value task (move, cut, etc.).\n\
-2. Memory Rule: When asked to update your belief state, add any other useful information not already contained in the previous belief state. Examples: rooms visited, bomb locations, each bomb's phase list and progress.\n\
-3. Bomb Counter Rule: Five bombs exist at the start. Track how many remain. Pay attention to the communication messages to keep track of bombs defused, location or progress towards defusal.\n\
+2. Memory Rule: When asked to update your belief state, add any other useful information not already contained in the previous belief state. Examples: rooms visited, bomb locations, each bomb's phase list and progress. Do not delete a bomb from your belief state, change its status to DEFUSED. Your memory of the history of events is limited, but you always keep your previous belief state.\n\
+3. Bomb Counter Rule: Five bombs exist at the start. Track how many remain. Pay attention to the communication messages to keep track of bombs defused, location or progress towards defusal. Be explicit when communicating about bomb status/phases.\n\
 4. No Duplicate Tools Rule: Before applying a tool, check messages and your belief state to be sure a teammate will not apply the same tool to the same bomb in the same round. Assume that the teammate whose call-sign comes first alphabetically will perform a defusal action if he is in the same room and if he has the corresponding tool.\n\
 5. Sequence Coordination Rule: After every successful cut on a multi-phase bomb, broadcast the remaining color sequence. The teammate with the next required color should position in that room; others should keep exploring.\n\
-5. Same Round Coordination Rule: Assume agents whose call-sign comes first alphabetically will act before you and will apply their tool if they can and use this to coordinate your tool use. Example: In a given round, agents A, B and C are in the same room with a bomb with know sequence green-red-blue. If A has the green tool, B can expect A is going to use it and try to use red if he has the red tool. The same applies to C.\n\
-6. Exploration Rule: Do not cluster without reason. When no bomb needs multi-player attention, each teammate should move to a different unexplored or partially explored room to maximise information gain.\n\
-7. Cutoff Recovery Rule: If you receive \"Communication cutoff\", continue acting based on memory. When comms return, send a SUMMARY listing all actions and observations since the last successful message.\n\
-8. Never assume your belief state is ground truth: correct false information if directly contradicted by new evidence.\n"
+6. Same Round Coordination Rule: Assume agents whose call-sign comes first alphabetically will act before you and will apply their tool if they can and use this to coordinate your tool use. Example: In a given round, agents A, B and C are in the same room with a bomb with know sequence green-red-blue. If A has the green tool, B can expect A is going to use it and try to use red if he has the red tool. The same applies to C.\n\
+7. Exploration Rule: Do not cluster without reason. When no bomb needs multi-player attention, each teammate should move to a different unexplored or partially explored room to maximise information gain.\n\
+8. Cutoff Recovery Rule: If you receive \"Communication cutoff\", continue acting based on memory. When comms return, send a SUMMARY listing all actions and observations since the last successful message.\n\
+9. Never assume your belief state is ground truth: correct false information if directly contradicted by new evidence.\n\
+10. Append to your belief state precious information you have not already shared with your team, like bomb phases/location you discovered.\n"
 
 
 
@@ -563,6 +592,7 @@ class ChatAgent():
         self.cutoff_activated = False
         self.improved = improved
         self.tips = tips
+        self.round = 1
 
         self.belief = belief
         # self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
@@ -595,7 +625,7 @@ class ChatAgent():
                 # {"role": "user", "content": INSTRUCT_PROMPT},
             ]
             if self.belief:
-                self.message_history.append({"role": "user", "content": self.last_belief+INITIAL_PROMPT})
+                self.message_history.append({"role": "user", "content": self.last_belief+INITIAL_PROMPT.format(agent_id = self.agent_id)})
         else:
             self.message_history = message_history
 
@@ -666,6 +696,7 @@ class ChatAgent():
             # Append prompt and response to a JSON file for logging
             log_entry = {
                 'agent': self.agent_id,
+                'round': self.round,
                 'prompt': self.message_history if self.message_history else "",
                 'response': response.choices[0].message.content
             }
@@ -692,17 +723,19 @@ class ChatAgent():
                 last_action = self.message_history.pop()['content']
                 self.message_history.append({"role": "user", "content": last_action+ text})
                 new_belief = self.makeAPIcall()
+                self.last_belief = new_belief
                 self.message_history.pop()
                 self.message_history.append({"role": "assistant", "content": last_action})
-                self.message_history.append({"role": "user", "content": 'Below is your current belief about game state based on your previous observations about the environment and interactions with your teammates. '+new_belief+INITIAL_PROMPT})
+                self.message_history.append({"role": "user", "content": 'Below is your current belief about game state based on your previous observations about the environment and interactions with your teammates. '+new_belief+INITIAL_PROMPT.format(agent_id = self.agent_id)})
             else:
                 self.message_history.append({"role": "user", "content": text})
                 new_belief = self.makeAPIcall()
+                self.last_belief = new_belief
                 self.message_history.pop()
                 content = new_belief
                 if self.allow_comm and self.cutoff_activated:
                     content += ' ' + CUTOFF
-                self.message_history.append({"role": "user", "content": content+' '+INITIAL_PROMPT})
+                self.message_history.append({"role": "user", "content": content+' '+INITIAL_PROMPT.format(agent_id = self.agent_id)})
 
             # new_belief = self.update_belief(text)
             # self.message_history.append({"role": "user", "content": new_belief+INITIAL_PROMPT})
@@ -727,6 +760,7 @@ class ChatAgent():
 
         self.message_history.append({"role": "assistant", "content": action})
         print(self.agent_id,action)
+        self.round += 1
         return action
 
     def save(self,data_path):

@@ -52,6 +52,7 @@ args = parser.parse_args()
 exp_base   = args.exp_name
 save_root  = Path(args.save_path)          # Path object once, reuse it
 args.exp_name = utils.next_experiment_name(exp_base, save_root, args.model, args.seed)
+exp_name = args.exp_name
 
 print(args)
 
@@ -102,6 +103,9 @@ round = 1
 invalid_actions = 0
 total_actions = 0
 tom_questions = None
+tom_answers = None
+tom_agents = {}
+results = {}
 
 cols = ['round', 'agent_id',
  'chat_output', 'action', 'comm','obs_text','new_belief','ToM1st','ToM2nd','ToM3rd', 'ToM1st_q', 'ToM2nd_q', 'ToM3rd_q', 'ground_truth']
@@ -120,14 +124,13 @@ who_has_inspected_what = {'alpha':set(),'bravo':set(),'charlie':set()}
 while not done['__all__'] and round <= args.max_step:
     print(f"{60*'-'}Start of Round {round}:{60*'-'}")
     env.env.render(overlay_graph=True, save_path=os.path.join(renders_path, f'round_{round}.pdf'))
-    #input(f"Press Enter to continue")
     cutoff_activated = np.random.random() < cutoff
     for agent_id in chat_agents.keys():
         chat_agent = chat_agents[agent_id]
         chat_agent.cutoff_activated = cutoff_activated
         env.cutoff_activated = chat_agent.cutoff_activated
         if round == 1 and not belief:
-            _, reward, done, info, obs_text, valid_action = env.step(agent_id, 0,initial_actions, communications)
+            _, reward, done, info, obs_text, valid_action, _ = env.step(agent_id, 0,initial_actions, communications)
 
             chat_agent.update_history(obs_text)
 
@@ -137,10 +140,7 @@ while not done['__all__'] and round <= args.max_step:
         initial_actions[agent_id], communications[agent_id] = env.decode_action(chat_output[agent_id])
         # initial_actions[agent_id], communications[agent_id] = env.decode_action_API(chat_output[agent_id])
 
-        if tom_reasoning and tom_questions is not None and not env.cutoff_activated:
-            _, reward, done, info, obs_text, valid_action = env.step(agent_id, round,initial_actions, communications, tom_questions)
-        else:
-            _, reward, done, info, obs_text, valid_action = env.step(agent_id, round,initial_actions, communications)
+        _, reward, done, info, obs_text, valid_action, results[agent_id] = env.step(agent_id, round,initial_actions, communications, tom_questions=tom_questions, tom_reasoning=tom_reasoning)
 
         if not valid_action:
             print(f"Invalid action for agent {agent_id} in round {round}.")
@@ -148,7 +148,6 @@ while not done['__all__'] and round <= args.max_step:
             
         total_actions += 1
 
-        new_belief = chat_agent.update_history(obs_text)
 
         agent = env.env.agents[agent_id]
 
@@ -161,6 +160,8 @@ while not done['__all__'] and round <= args.max_step:
         ToM1st_q = None
         ToM2nd_q = None
         ToM3rd_q = None
+
+        chat_agent.round = round
 
         if ToM:
             target_id = np.random.choice([x for x in chat_agents.keys() if x != agent_id])
@@ -260,25 +261,31 @@ while not done['__all__'] and round <= args.max_step:
                 ToM3rd_q = None
             
             tom_questions = [ToM1st_q, ToM2nd_q, ToM3rd_q]
+            tom_answers = [ToM1st, ToM2nd, ToM3rd]
+            tom_agents[agent_id] = (tom_questions, tom_answers)
 
+     
+    # Update beliefs after all agents have acted       
+    for agent_id in chat_agents.keys():
+        chat_agent = chat_agents[agent_id]
+        obs_text = env.step_text(agent_id, round, initial_actions, communications, results[agent_id])
+        last_belief = chat_agent.last_belief
+        new_belief = chat_agent.update_history(obs_text)
+        chat_agent.round += 1
+        
+        if ToM:
+            ToM1st_q, ToM2nd_q, ToM3rd_q = tom_agents[agent_id][0]
+            ToM1st, ToM2nd, ToM3rd = tom_agents[agent_id][1]
+        else:
+            ToM1st_q = ToM2nd_q = ToM3rd_q = None
+            ToM1st = ToM2nd = ToM3rd = None
 
-
-
-
-
-        # chat_agent.save(DATA_PATH)
-
-        if initial_actions[agent_id] is None:
-            class InvalidAction:
-                name = "Invalid"
-            initial_actions[agent_id] = InvalidAction()
-
-        record = {'round': round, 'agent_id': agent_id, 'chat_output': chat_output[agent_id], 'action':initial_actions[agent_id].name.replace('_', ' '),'comm':communications[agent_id],'obs_text': obs_text,"new_belief":new_belief,'ToM1st':ToM1st, 'ToM2nd':ToM2nd, 'ToM3rd':ToM3rd, 'ToM1st_q': ToM1st_q, 'ToM2nd_q': ToM2nd_q, 'ToM3rd_q': ToM3rd_q, 'ground_truth': ground_truth}
+        record = {'round': round, 'agent_id': agent_id, 'chat_output': chat_output[agent_id], 'action':initial_actions[agent_id].name.replace('_', ' ') if initial_actions[agent_id] != None else 'Invalid','comm':communications[agent_id],'obs_text': obs_text,"new_belief":last_belief,'ToM1st':ToM1st, 'ToM2nd':ToM2nd, 'ToM3rd':ToM3rd, 'ToM1st_q': ToM1st_q, 'ToM2nd_q': ToM2nd_q, 'ToM3rd_q': ToM3rd_q, 'ground_truth': ground_truth}
         with open(DATA_PATH + 'record.jsonl', 'a+', encoding='utf-8') as f:
             json.dump(record, f)
             f.write('\n')
 
-        summary = {'round': round, 'agent_id': agent_id, 'chat_output': chat_output[agent_id], 'action':initial_actions[agent_id].name.replace('_', ' '),'comm':communications[agent_id],'obs_text': obs_text,"new_belief":new_belief,'ToM1st':ToM1st, 'ToM2nd':ToM2nd, 'ToM3rd':ToM3rd, 'ToM1st_q': ToM1st_q, 'ToM2nd_q': ToM2nd_q, 'ToM3rd_q': ToM3rd_q, 'ground_truth': ground_truth}
+        summary = {'round': round, 'agent_id': agent_id, 'chat_output': chat_output[agent_id], 'action':initial_actions[agent_id].name.replace('_', ' ') if initial_actions[agent_id] != None else 'Invalid','comm':communications[agent_id],'obs_text': obs_text,"new_belief":last_belief,'ToM1st':ToM1st, 'ToM2nd':ToM2nd, 'ToM3rd':ToM3rd, 'ToM1st_q': ToM1st_q, 'ToM2nd_q': ToM2nd_q, 'ToM3rd_q': ToM3rd_q, 'ground_truth': ground_truth}
         print(summary)
         with open(DATA_PATH + 'summary.csv', 'a+', encoding='utf-8') as f:
             for k,v in summary.items():
@@ -300,3 +307,5 @@ results.update(total_usage)
 
 with open(os.path.join(DATA_PATH, 'results.json'), 'w', encoding='utf-8') as f:
     json.dump(results, f, indent=2)
+    
+print(f"Experiment {exp_name} completed. Results saved to {DATA_PATH}.")
