@@ -124,11 +124,8 @@ who_has_inspected_what = {'alpha':set(),'bravo':set(),'charlie':set()}
 while not done['__all__'] and round <= args.max_step:
     print(f"{60*'-'}Start of Round {round}:{60*'-'}")
     env.env.render(overlay_graph=True, save_path=os.path.join(renders_path, f'round_{round}.pdf'))
-    cutoff_activated = np.random.random() < cutoff
     for agent_id in chat_agents.keys():
         chat_agent = chat_agents[agent_id]
-        chat_agent.cutoff_activated = cutoff_activated
-        env.cutoff_activated = chat_agent.cutoff_activated
         if round == 1 and not belief:
             _, reward, done, info, obs_text, valid_action, _ = env.step(agent_id, 0,initial_actions, communications)
 
@@ -264,9 +261,11 @@ while not done['__all__'] and round <= args.max_step:
             tom_answers = [ToM1st, ToM2nd, ToM3rd]
             tom_agents[agent_id] = (tom_questions, tom_answers)
 
-     
+    cutoff_activated = np.random.random() < cutoff
+    env.cutoff_activated = chat_agent.cutoff_activated 
     # Update beliefs after all agents have acted       
     for agent_id in chat_agents.keys():
+        chat_agent.cutoff_activated = env.cutoff_activated
         chat_agent = chat_agents[agent_id]
         obs_text = env.step_text(agent_id, round, initial_actions, communications, results[agent_id])
         last_belief = chat_agent.last_belief

@@ -167,6 +167,7 @@ class DragonTextEnv():
         text += 'Total team score: {score}. '.format(score=str(self.env.score))
         text += f"Previous action results ({action.name.replace('_', ' ') if action != None else 'Invalid'}): " + obs_text + ' '
         text += 'Room contents: '+ room_contents+ ' '
+        text += 'Communication is available this round. ' if not self.cutoff_activated else 'Communication is not available this round.'
         # text += 'Teammate Locations: ' + team_location_text + ' '
 
 
@@ -283,6 +284,7 @@ class DragonTextEnv():
         text += 'Total team score: {score}. '.format(score=str(self.env.score))
         text += f"Previous action results ({action.name.replace('_', ' ') if action != None else 'Invalid'}): " + results + ' '
         text += 'Room contents: '+ room_contents+ ' '
+        text += 'Communication is available this round. ' if not self.cutoff_activated else 'Communication is not available this round.'
         # text += 'Teammate Locations: ' + team_location_text + ' '
 
 
