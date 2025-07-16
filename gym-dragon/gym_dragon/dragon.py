@@ -20,6 +20,8 @@ from .utils import BoundedGrid, get_item, random_allocation
 from .wrappers import ShowAllAgentLocations
 from .core.action import MiniActionEnum
 
+import copy
+
 ### Constants
 
 RESOURCES_DIR = Path(__file__).parent / '../resources'
@@ -1161,6 +1163,7 @@ class MiniDragonBaseEnv(DragonBaseEnv):
             recon_phase_length: float = 0,
             seconds_per_timestep: float = 2.0,
             valid_regions: set[Region] = set(Region),
+            valid_nodes: dict[int, tuple[int, int]] = {0: (28, 56), 3: (15, 55), 5: (40, 56), 6: (33, 64), 8: (22, 63)},
             obs_wrapper: Optional[Callable[[Observation], Observation]] = None,
             budget_weights: dict[Region, dict[str, float]] = default_budget_weights,
             color_tools_only: bool = True,
@@ -1178,6 +1181,8 @@ class MiniDragonBaseEnv(DragonBaseEnv):
             Number of seconds per timestep in the environment
         valid_regions : set[Region], optional
             Set of regions to include in the environment
+        valid_nodes : dict[int, tuple[int, int], optional
+            List of valid node positions 'centroid': (x, z) to include in the environment
         obs_wrapper : Callable(Observation) -> Observation, optional
             Callable observation wrapper
         budget_weights : dict[Region, dict[str, float]]
@@ -1200,13 +1205,13 @@ class MiniDragonBaseEnv(DragonBaseEnv):
             'charlie': Agent('charlie', color=Color.blue),
         }
         self._agent_ids = set(agent_id for agent_id in self._agents)
-        self.valid_nodes = [(28, 56), (15, 55), (40, 56), (33, 64), (22, 63)]
+        self.valid_nodes = valid_nodes
 
         # Load map data
         with open(RESOURCES_DIR / 'dragon_v2.pkl', 'rb') as file:
             data = pickle.load(file)
             self._init_graph(
-                data['centroids'], data['edges'], valid_nodes=self.valid_nodes)
+                data['centroids'], data['edges'])
             self._init_grid(
                 data['block_grid'], data['segmentation_grid'], valid_regions=valid_regions)
 
@@ -1961,13 +1966,23 @@ class MiniDragonBaseEnv(DragonBaseEnv):
         else:
             # Randomly select bomb locations from each region
             color_list = [Color.red,Color.green,Color.blue]
-            bomb_locations = self._random.permutation([(28,56),(14,55),(40,56),(33,64),(22,63)])
+            # Correct locations for valid nodes when centroids are not part of the corresponding region
+            corrected_locations = copy.deepcopy(self.valid_nodes)
+            for node_id, centroid in corrected_locations.items():
+                valid_nodes = self._node_grid.find(self.graph.nodes[node_id])
+                valid_loc = next(iter(valid_nodes))
+                if self._node_grid[corrected_locations[node_id]] != self._node_grid[valid_loc]:
+                    x0, z0 = centroid
+                    closest_valid_node = min(valid_nodes, key=lambda p: (p[0] - x0)**2 + (p[1] - z0)**2)
+                    corrected_locations[node_id] = closest_valid_node
+            bomb_locations = self._random.permutation([list(corrected_locations.values())[x] for x in self._random.choice(len(corrected_locations), num_bombs_per_region, replace=False)])
+
             for bomb_id, location in enumerate(bomb_locations):
-                if bomb_id <= 1:
+                if bomb_id <= num_bombs_per_region/5:  # 1/5 of bombs are 1-phased
                     sequence = [color_list[x] for x in self._random.choice(3,1)]
-                elif bomb_id <=3:
+                elif bomb_id <=3*num_bombs_per_region/5:  # 2/5 of bombs are 2-phased
                     sequence = [color_list[x] for x in self._random.choice(3, 2,replace = False)]
-                else:
+                else:  # 1/5 of bombs are 3-phased
                     sequence = [color_list[x] for x in self._random.choice(3, 3,replace = False)]
                 bomb = Bomb(
                     bomb_id=bomb_id+1,
@@ -2035,7 +2050,7 @@ class MiniDragonBaseEnv(DragonBaseEnv):
         if self._renderer:
             self._renderer.reset(self._block_grid)
 
-    def _init_graph(self, centroids: dict, edges: Iterable, valid_nodes=[(28,56),(15,55),(40,56),(33,64),(22,63)]):
+    def _init_graph(self, centroids: dict, edges: Iterable):
         """
         Initialize the underlying graph for the environment.
 
@@ -2050,7 +2065,7 @@ class MiniDragonBaseEnv(DragonBaseEnv):
         """
         # Filter by region
         centroids = {
-            k: v for k, v in centroids.items() if v in valid_nodes}
+            k: v for k, v in centroids.items() if v in list(self.valid_nodes.values())}
         edges = {(i, j) for i, j in edges if i in centroids and j in centroids}
 
         # Create graph
