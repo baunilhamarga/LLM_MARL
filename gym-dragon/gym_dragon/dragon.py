@@ -1159,9 +1159,9 @@ class MiniDragonBaseEnv(DragonBaseEnv):
 
     def __init__(
             self,
-            mission_length: float = 900,
+            mission_length: float = 999,
             recon_phase_length: float = 0,
-            seconds_per_timestep: float = 2.0,
+            seconds_per_timestep: float = 1.0,
             valid_regions: set[Region] = set(Region),
             valid_nodes: dict[int, tuple[int, int]] = {0: (28, 56), 3: (15, 55), 5: (40, 56), 6: (33, 64), 8: (22, 63)},
             obs_wrapper: Optional[Callable[[Observation], Observation]] = None,
@@ -1391,15 +1391,6 @@ class MiniDragonBaseEnv(DragonBaseEnv):
             self._block_grid[...] = self._base_grid[...]  # reset grid
             for agent in self.agents.values(): agent.reset(random=self._random)  # reset agents
 
-            # Place bombs
-            if seed == 0:
-                self._place_bombs(
-                    csv_path=csv_path,
-                    num_bombs_per_region=num_bombs_per_region)
-            else:
-                self._place_bombs(
-                    csv_path=None,
-                    num_bombs_per_region=num_bombs_per_region)
             # Calculate team budget
             if tool_allocation:
                 self._tool_allocation = tool_allocation
@@ -1422,13 +1413,26 @@ class MiniDragonBaseEnv(DragonBaseEnv):
                 start_node_candidates = [
                     node for node in self.graph.nodes.values() if node.region in start_regions]
                 start_node = self._random.choice(start_node_candidates)
-            for agent in self.agents.values():
-                agent.go_to(start_node)
-                self.observations[agent.id].update_from_agent_node()
+            
+            # Place bombs
+            if seed == 0:
+                self._place_bombs(
+                    csv_path=csv_path,
+                    num_bombs_per_region=num_bombs_per_region)
+            else:
+                self._place_bombs(
+                    csv_path=None,
+                    num_bombs_per_region=num_bombs_per_region,
+                    start_location=start_node.centroid)
 
             # Reset renderer
             if self._renderer:
                 self._renderer.reset(self._block_grid)
+
+        for agent in self.agents.values():
+            agent.go_to(start_node)
+            self.observations[agent.id].update_from_agent_node()
+
         obs = self._get_obs()
         self.tick(dt=0)
         return obs
@@ -1934,7 +1938,8 @@ class MiniDragonBaseEnv(DragonBaseEnv):
 
     def _place_bombs(self,
                      csv_path: str = None,
-                     num_bombs_per_region: int = 15):
+                     num_bombs_per_region: int = 15,
+                     start_location = (28,56)):
         """
         Place bombs on the map.
 
@@ -1976,6 +1981,10 @@ class MiniDragonBaseEnv(DragonBaseEnv):
                     closest_valid_node = min(valid_nodes, key=lambda p: (p[0] - x0)**2 + (p[1] - z0)**2)
                     corrected_locations[node_id] = closest_valid_node
             bomb_locations = self._random.permutation([list(corrected_locations.values())[x] for x in self._random.choice(len(corrected_locations), num_bombs_per_region, replace=False)])
+            # Garantees a bomb is on the starting node
+            start_loc_included = np.any(np.all(bomb_locations == start_location, axis=1))
+            if not start_loc_included:
+                bomb_locations[int(self._random.choice(len(bomb_locations),1)[0])] = start_location
 
             for bomb_id, location in enumerate(bomb_locations):
                 if bomb_id <= num_bombs_per_region/5:  # 1/5 of bombs are 1-phased

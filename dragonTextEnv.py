@@ -7,6 +7,7 @@ import openai
 import time
 import json
 import os
+import re
 from collections.abc import Mapping
 from numbers import Number
 from tenacity import (
@@ -19,11 +20,18 @@ COLOR_TO_STR={0: 'Red',1:'Green',2:'Blue'}
 # ACTION_TO_STR={1: 'inspect_bomb',7:'go_to_node_0',8:'go_to_node_3',9:'go_to_node_5',10:'go_to_node_6',11:'go_to_node_8'}
 BOMBSTATE_TO_STR = {0: 'inactive',1: 'active',2: 'exploded',3: 'defused'}
 openai.api_key = os.environ.get("OPENAI_API_KEY", "na")
+PRESETS = {
+    'village': {0: (28, 56), 3: (15, 55), 5: (40, 56), 6: (33, 64), 8: (22, 63), 11: (32, 56), 12: (41, 52), 14: (15, 67), 15: (21, 55), 16: (45, 52), 17: (5, 62), 20: (42, 60), 21: (6, 56), 22: (48, 52), 23: (37, 78), 24: (40, 74), 26: (46, 65), 27: (48, 60), 28: (11, 69), 31: (14, 80), 32: (46, 75), 33: (6, 69), 34: (20, 80), 36: (48, 70), 38: (21, 69), 40: (6, 76), 41: (23, 76), 43: (46, 80), 45: (28, 88), 46: (43, 91), 47: (29, 76), 48: (15, 92), 49: (9, 87), 51: (47, 85), 52: (4, 82), 53: (32, 69), 55: (34, 92), 56: (9, 82), 57: (31, 82), 58: (39, 89), 63: (46, 90), 64: (48, 90), 65: (27, 96), 66: (20, 96), 67: (44, 98), 68: (5, 95), 69: (11, 98), 70: (39, 98), 71: (34, 98), 72: (48, 98), 73: (34, 75), 75: (6, 98), 77: (6, 90)},
+    'default': {0: (28, 56), 3: (15, 55), 5: (40, 56), 6: (33, 64), 8: (22, 63)},
+    'easy': {0: (28, 56), 8: (22, 63), 6: (33, 64)},
+    'medium': {23: (37, 78), 34: (20, 80), 38: (21, 69), 41: (23, 76), 47: (29, 76), 53: (32, 69), 57: (31, 82), 73: (34, 75)},
+    'hard': {0: (28, 56), 3: (15, 55), 5: (40, 56), 6: (33, 64), 8: (22, 63), 14: (15, 67), 20: (42, 60), 23: (37, 78), 31: (14, 80), 34: (20, 80), 38: (21, 69), 41: (23, 76), 47: (29, 76), 53: (32, 69), 57: (31, 82), 73: (34, 75)},
+}
 class DragonTextEnv():
-    def __init__(self,seed = None, include_agent_action = False,allow_comm = True,act_and_comm = True,tool_per_agent = 2):
+    def __init__(self,seed = None, include_agent_action = False,allow_comm = True,act_and_comm = True,tool_per_agent = 2, preset='default'):
         self.seed = seed
 
-        self.valid_node = [0,3,5,6,8]
+        self.valid_node = list(PRESETS[preset].keys())
         self.include_agent_action = include_agent_action
         self.allow_comm = allow_comm
         self.act_and_comm = act_and_comm
@@ -37,6 +45,7 @@ class DragonTextEnv():
                          include_fire_bombs=False,
                          include_fuse_bombs=False,
                          color_tools_only=True,
+                         valid_nodes=PRESETS[preset],
                         obs_wrapper=MiniObs)
         self.env.seed(self.seed)
 
@@ -329,14 +338,17 @@ class DragonTextEnv():
             if 'inspect' in lower:
                 action = Action.inspect_bomb
             elif 'move to room' in lower:
-                room_id = int(lower.split('move to room')[1][1])
+                m = re.search(r'\bmove to room\s*(\d+)\b', lower)
+                if m:
+                    room_id = int(m.group(1))
                 if room_id in self.valid_node:
                     action = Action.go_to(room_id)
                 else:
                     action = None
             elif 'go_to_node_' in lower:
-                room_id = int(lower.split('go_to_node_')[1][0])
-                action = Action.go_to(room_id)
+                m = re.search(r'go_to_node_(\d+)', lower)
+                if m:
+                    room_id = int(m.group(1))
             elif 'apply' in lower or 'defuse' in lower:
                 colour = next((tok for tok in tokens if tok in ('red', 'blue', 'green')), None)  # find the first colour token
                 if colour == 'red':
@@ -442,6 +454,194 @@ MAX_RETRIES = 10
 RETRY_DELAY = 3
 
 
+MAP_DEFAULT = "0 : 3 5 6 8 \n\
+3 : 0 8 \n\
+5 : 0 6 \n\
+6 : 0 5 8 \n\
+8 : 0 3 6 \n\ "
+
+MAP_NODES_DEFAULT = "0 : \n\
+3 : \n\
+5 : \n\
+6 : \n\
+8 : \n\ "
+
+MAP_EASY = "0 : 6 8 \n\
+6 : 0 8 \n\
+8 : 0 6 \n\ "
+
+MAP_NODES_EASY = "0 : \n\
+6 : \n\
+8 : \n\ "
+
+MAP_MEDIUM = "23 : 47 73 \n\
+34 : 38 41 57 \n\
+38 : 34 53 \n\
+41 : 34 47 \n\
+47 : 23 41 57 73 \n\
+53 : 38 73 \n\
+57 : 34 47 \n\
+73 : 23 47 53 \n\ "
+
+MAP_NODES_MEDIUM = "23 : \n\
+34 : \n\
+38 : \n\
+41 : \n\
+47 : \n\
+53 : \n\
+57 : \n\
+73 : \n\ "
+
+MAP_HARD = "0 : 3 5 6 8 \n\
+3 : 0 8 14 \n\
+5 : 0 6 \n\
+6 : 0 5 8 20 23 \n\
+8 : 0 3 6 14 \n\
+14 : 3 8 31 34 \n\
+20 : 6 \n\
+23 : 6 47 73 \n\
+31 : 14 34 \n\
+34 : 14 31 38 41 57 \n\
+38 : 34 53 \n\
+41 : 34 47 \n\
+47 : 23 41 57 73 \n\
+53 : 38 73 \n\
+57 : 34 47 \n\
+73 : 23 47 53 \n\ "
+
+MAP_NODES_HARD = "0 : \n\
+3 : \n\
+5 : \n\
+6 : \n\
+8 : \n\
+14 : \n\
+20 : \n\
+23 : \n\
+31 : \n\
+34 : \n\
+38 : \n\
+41 : \n\
+47 : \n\
+53 : \n\
+57 : \n\
+73 : \n\ "
+
+MAP_VILLAGE = "0 : 3 5 6 8 \n\
+3 : 0 8 14 15 17 21 \n\
+5 : 0 6 12 16 22 27 \n\
+6 : 0 5 8 11 20 23 24 \n\
+8 : 0 3 6 14 \n\
+11 : 6 \n\
+12 : 5 \n\
+14 : 3 8 17 28 31 34 \n\
+15 : 3 \n\
+16 : 5 \n\
+17 : 3 14 21 40 \n\
+20 : 6 24 26 27 \n\
+21 : 3 17 \n\
+22 : 5 \n\
+23 : 6 24 45 47 73 \n\
+24 : 6 20 23 26 32 46 \n\
+26 : 20 24 32 36 \n\
+27 : 5 20 \n\
+28 : 14 33 \n\
+31 : 14 34 40 48 49 \n\
+32 : 24 26 43 \n\
+33 : 28 \n\
+34 : 14 31 38 41 57 \n\
+36 : 26 \n\
+38 : 34 53 \n\
+40 : 17 31 52 \n\
+41 : 34 47 \n\
+43 : 32 51 \n\
+45 : 23 48 55 65 \n\
+46 : 24 58 67 70 72 \n\
+47 : 23 41 57 73 \n\
+48 : 31 45 49 66 68 69 \n\
+49 : 31 48 56 \n\
+51 : 43 63 64 \n\
+52 : 40 \n\
+53 : 38 73 \n\
+55 : 45 \n\
+56 : 49 \n\
+57 : 34 47 \n\
+58 : 46 \n\
+63 : 51 \n\
+64 : 51 \n\
+65 : 45 71 \n\
+66 : 48 \n\
+67 : 46 \n\
+68 : 48 75 77 \n\
+69 : 48 \n\
+70 : 46 \n\
+71 : 65 \n\
+72 : 46 \n\
+73 : 23 47 53 \n\
+75 : 68 \n\
+77 : 68 \n\ "
+
+MAP_NODES_VILLAGE = "0 : \n\
+3 : \n\
+5 : \n\
+6 : \n\
+8 : \n\
+11 : \n\
+12 : \n\
+14 : \n\
+15 : \n\
+16 : \n\
+17 : \n\
+20 : \n\
+21 : \n\
+22 : \n\
+23 : \n\
+24 : \n\
+26 : \n\
+27 : \n\
+28 : \n\
+31 : \n\
+32 : \n\
+33 : \n\
+34 : \n\
+36 : \n\
+38 : \n\
+40 : \n\
+41 : \n\
+43 : \n\
+45 : \n\
+46 : \n\
+47 : \n\
+48 : \n\
+49 : \n\
+51 : \n\
+52 : \n\
+53 : \n\
+55 : \n\
+56 : \n\
+57 : \n\
+58 : \n\
+63 : \n\
+64 : \n\
+65 : \n\
+66 : \n\
+67 : \n\
+68 : \n\
+69 : \n\
+70 : \n\
+71 : \n\
+72 : \n\
+73 : \n\
+75 : \n\
+77 : \n\ "
+
+PRESET_MAPS = {
+    'village': (MAP_VILLAGE, MAP_NODES_VILLAGE),
+    'default': (MAP_DEFAULT, MAP_NODES_DEFAULT),
+    'easy': (MAP_EASY, MAP_NODES_EASY),
+    'medium': (MAP_MEDIUM, MAP_NODES_MEDIUM),
+    'hard': (MAP_HARD, MAP_NODES_HARD),
+}
+
 BACKGROUND_PROMPT_NEW = "Welcome to our interactive text game! In this game, you'll assume the role of a specialist on a search and rescue team. Alongside two other players, you'll navigate a five-room environment with a mission to defuse five hidden bombs. Your call sign is {agent_id}\
 The Map: Imagine a network of rooms represented by a connected graph where each node corresponds to a room, and the edges between nodes depict hallways. The rooms are numbered 0, 3, 6, 5, and 8. Room 0 is connected to all other rooms. Room 5 shares a hallway with room 6. Room 3 is linked to room 8. And room 8 is also connected with room 6. You can only travel to adjacent, directly connected rooms at each turn.\
 The Challenge: Scattered among these rooms are five bombs, each coded with different phases represented by colors. To defuse them, you'll need to use the correct wire-cutting tools in the correct sequence. There are one-phase, two-phase, and three-phase bombs, needing 1, 2, or 3 color-coded tool applications in sequence to disarm. For instance, a bomb with a red-green phase sequence requires the red tool first, then the green one. Points are awarded based on the number of tools used for defusing a bomb, with each tool use worth 10 points. Your task is to maximize the team score as soon as possible. The challenge is that the bomb locations and sequences are unknown to players at the start.\
@@ -487,14 +687,16 @@ INITIAL_PROMPT = "Given the above belief state, {agent_id}, what is your next ac
 CUTOFF = 'Communication cutoff: no communication available this round'
 
 
-BACKGROUND_PROMPT_NEW_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n----------------  ROLE AND OBJECTIVE  ----------------\n* Defuse all 5 hidden bombs as fast as possible.\n* A team earns 10 x (number of phases) points for each bomb defused.\n* Maximize the final team score.\n\n----------------  ENVIRONMENT MAP  ----------------  \nThe facility is a connected graph of five rooms:\nRoom 0: 3 5 6 8\nRoom 3: 0 8\nRoom 5: 0 6\nRoom 6: 0 5 8\nRoom 8: 0 3 6\nYou may move only to rooms listed as directly connected to your current location.\n\n----------------  BOMB TYPES  ----------------\n* Bombs may have 1, 2, or 3 color phases. Defuse them by applying the matching colored tools in order.\n\n----------------  TOOLS PER PLAYER  ----------------\n* Alpha   - red, green\n* Bravo   - green, blue\n* Charlie - blue, red\n\n----------------  VALID ACTIONS  ----------------\n1. Move to an adjacent room     -> Move to Room X\n2. Inspect a bomb's phase list  -> Inspect Bomb\n3. Apply a wire cutter tool     -> Apply <Color> Tool\n\n----------------  COMMUNICATION  ----------------\n* Each round you may append ONE message to teammates (they will read it next round).\n\n----------------  OBSERVATION INFO  ----------------  \nAt the start of every round you learn:\n* Current round number and cumulative team score\n* Your room contents (bombs, players)\n* Locations of teammates\n* Messages sent in the previous round\n\n----------------  REPLY FORMAT  ----------------  \nTo facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules.\nAre you ready to begin?\""
+BACKGROUND_PROMPT_NEW_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n----------------  ROLE AND OBJECTIVE  ----------------\n* Defuse all 5 hidden bombs as fast as possible.\n* A team earns 10 x (number of phases) points for each bomb defused.\n* Maximize the final team score.\n\n----------------  ENVIRONMENT MAP  ----------------  \nThe facility is a connected graph of rooms labeled with integers:\n{map}\nYou may move only to rooms listed as directly connected to your current location.\n\n----------------  BOMB TYPES  ----------------\n* Bombs may have 1, 2, or 3 color phases. Defuse them by applying the matching colored tools in order.\n\n----------------  TOOLS PER PLAYER  ----------------\n* Alpha   - red, green\n* Bravo   - green, blue\n* Charlie - blue, red\n\n----------------  VALID ACTIONS  ----------------\n1. Move to an adjacent room     -> Move to Room X\n2. Inspect a bomb's phase list  -> Inspect Bomb\n3. Apply a wire cutter tool     -> Apply <Color> Tool\n\n----------------  COMMUNICATION  ----------------\n* Each round you may append ONE message to teammates (they will read it next round).\n\n----------------  OBSERVATION INFO  ----------------  \nAt the start of every round you learn:\n* Current round number and cumulative team score\n* Your room contents (bombs, players)\n* Locations of teammates\n* Messages sent in the previous round\n\n----------------  REPLY FORMAT  ----------------  \nTo facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules.\nAre you ready to begin?\""
 
 
 BACKGROUND_PROMPT_CUTOFF_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n\
 ----------------  ROLE AND OBJECTIVE  ----------------\n\
 * Defuse all 5 hidden bombs as fast as possible.\n* A team earns 10 x (number of phases) points for each bomb defused.\n* Maximize the final team score.\n\n\
 ----------------  ENVIRONMENT MAP  ----------------  \n\
-The facility is a connected graph of five rooms:\nRoom 0: 3 5 6 8\nRoom 3: 0 8\nRoom 5: 0 6\nRoom 6: 0 5 8\nRoom 8: 0 3 6\nYou may move only to rooms listed as directly connected to your current location.\n\n\
+The facility is a connected graph of rooms labeled with integers:\n\
+{map}\n\
+\nYou may move only to rooms listed as directly connected to your current location.\n\n\
 ----------------  BOMB TYPES  ----------------\n\
 * Bombs may have 1, 2, or 3 color phases. Defuse them by applying the matching colored tools in order.\n\n\
 ----------------  TOOLS PER PLAYER  ----------------\n\
@@ -521,11 +723,7 @@ Other players here: alpha, bravo, charlie\n\
 Bomb {initial_bomb}: sequence UNKNOWN\n\
 No other bombs detected in this room.\n\
 Contents of all rooms:\n  \
-0 :   \n\
-3 :   \n\
-5 :   \n\
-6 :   \n\
-8 :   \n\
+{map_nodes}\
 \n\
 \n\
 ----------------  TEAMMATE LOCATIONS  ----------------  \n\
@@ -535,11 +733,7 @@ charlie - Room {initial_node}\n\
 \n\
 ----------------  MAP (adjacency list)  ----------------  \n\
 Each line shows: Room : directly connected rooms  \n\
-0 : 3 5 6 8  \n\
-3 : 0 8  \n\
-5 : 0 6  \n\
-6 : 0 5 8  \n\
-8 : 0 3 6  \n\
+{map}\
 \n\
 ----------------  KNOWN BOMBS  ----------------  \n\
 Bomb {initial_bomb}  |  Room {initial_node}  |  Phase list: UNKNOWN | Status: UNKNOWN\n\
@@ -581,7 +775,7 @@ TIPS = "GENERAL COORDINATION AND MEMORY TIPS:\n\
 
 
 class ChatAgent():
-    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False, improved = False, tips = False):
+    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False, improved = False, tips = False, preset='default'):
         self.agent_id = agent_id
         self.model = model
         self.temperature=temperature
@@ -613,7 +807,7 @@ class ChatAgent():
             if self.tips:
                 BACKGROUND_PROMPT += '\n\n' + TIPS
             if self.improved:
-                self.last_belief = INITIAL_BELIEF_IMPROVED.format(agent_id=agent_id, initial_bomb=initial_bomb,initial_node=initial_node)
+                self.last_belief = INITIAL_BELIEF_IMPROVED.format(agent_id=agent_id, initial_bomb=initial_bomb,initial_node=initial_node,map=PRESET_MAPS[preset][0],map_nodes=PRESET_MAPS[preset][1])
             else:
                 self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
         else:
@@ -623,7 +817,7 @@ class ChatAgent():
         if message_history is None:
             self.message_history = [
                 {"role": "system", "content": 'You are playing a text game with the user.'},
-                {"role": "user", "content": BACKGROUND_PROMPT.format(agent_id = agent_id)},
+                {"role": "user", "content": BACKGROUND_PROMPT.format(agent_id = agent_id, map=PRESET_MAPS[preset][0])},
                 # {"role": "user", "content": INSTRUCT_PROMPT},
             ]
             if self.belief:

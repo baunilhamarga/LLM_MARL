@@ -1,7 +1,7 @@
 import argparse
 import json
 import os
-from dragonTextEnv import DragonTextEnv, ChatAgent
+from dragonTextEnv import DragonTextEnv, ChatAgent, PRESETS
 import numpy as np
 import time
 from pathlib import Path
@@ -45,6 +45,8 @@ parser.add_argument('--improved', action='store_true', default=False,
                     help='enable improved agent behavior')
 parser.add_argument('--tips', action='store_true', default=False,
                     help='enable tips for agents')
+parser.add_argument('--preset', type=str, choices=list(PRESETS.keys()), default='default',
+                    help='choose the preset map size')
 
 # model
 args = parser.parse_args()
@@ -81,18 +83,19 @@ cutoff = args.cutoff
 tom_reasoning = args.tom_reasoning
 improved = args.improved
 tips = args.tips
+preset = args.preset
 
 np.random.seed(seed)
 
-env = DragonTextEnv(seed = seed,include_agent_action = args.include_agent_action,allow_comm = allow_comm,act_and_comm = act_and_comm,tool_per_agent = args.tool_per_agent)
+env = DragonTextEnv(seed = seed,include_agent_action = args.include_agent_action,allow_comm = allow_comm,act_and_comm = act_and_comm,tool_per_agent = args.tool_per_agent, preset = preset)
 Action = env.env.action_enum
 obs = env.env._get_obs()
 info = {}
 initial_node = str(env.env.agents['alpha'].node.id)
 initial_bomb = str(env.env.agents['alpha'].bomb.id)
-chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips),
-               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips),
-               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips)}
+chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset),
+               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset),
+               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset)}
 initial_actions = {'alpha':Action.go_to(int(initial_node)),'bravo':Action.go_to(int(initial_node)),'charlie':Action.go_to(int(initial_node))}
 communications = {'alpha':'None','bravo':'None','charlie':'None'}
 
