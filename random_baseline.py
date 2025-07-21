@@ -23,9 +23,10 @@ def random_baseline(seed=0, num_episodes=1, max_rounds=30, render=False, perform
         renders_path = './tmp/renders'
         os.makedirs(renders_path, exist_ok=True)
 
-    env = MiniDragonEnv(mission_length=999,
+    env = MiniDragonEnv(mission_length=max_rounds+1,
                         recon_phase_length=0,
                         include_chained_bombs=False,
+                        seconds_per_timestep=1.0,
                         include_fire_bombs=False,
                         include_fuse_bombs=False,
                         color_tools_only=True,
@@ -38,7 +39,7 @@ def random_baseline(seed=0, num_episodes=1, max_rounds=30, render=False, perform
         with trange(1, max_rounds + 1, desc=f"Episode {episode+1}/{num_episodes}", unit="round") as t:
             for round in t:
                 if render:
-                    renders_dir = os.path.join(renders_path, f'seed_{seed}', f'episode_{episode}')
+                    renders_dir = os.path.join(renders_path, f'seed_{seed}', f'episode_{episode+1}')
                     os.makedirs(renders_dir, exist_ok=True)
                     env.render(overlay_graph=True, save_path=os.path.join(renders_dir, f'round_{round}.pdf'))
                 random_action = env.action_space_sample()
@@ -46,8 +47,8 @@ def random_baseline(seed=0, num_episodes=1, max_rounds=30, render=False, perform
                 if all(done.values()):
                     t.set_postfix_str(f"Score: {env.score}")
                     break
-        print('Episode:', episode, 'Score:', env.score, 'Total Rounds:', round)
-        performances.loc[len(performances)] = {'seed': seed, 'episode': episode, 'score': env.score, 'rounds': round}
+        print('Episode:', episode+1, 'Score:', env.score, 'Total Rounds:', round)
+        performances.loc[len(performances)] = {'seed': seed, 'episode': episode+1, 'score': env.score, 'rounds': round}
 
     if num_episodes > 0:
         filtered_performances = performances[performances['seed'] == seed]
