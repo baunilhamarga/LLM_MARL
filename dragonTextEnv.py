@@ -329,7 +329,7 @@ class DragonTextEnv():
         if self.act_and_comm:
             if len(lower.split('message to team:')) > 1 and len(lower.split('"')) > 1:
                 comm = lower.split('message to team:')[1].split('"')[1]
-                lower = lower.split('message to team:')[0]+ lower.split('message to team:')[1].split('"')[2]
+                lower = lower.split('message to team:')[0]+ lower.split('message to team:')[1].split('"')[2] if len(lower.split('message to team:')[1])>2 else ""
             else:
                 comm = ''
             if self.cutoff_activated:
