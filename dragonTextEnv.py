@@ -15,6 +15,7 @@ from tenacity import (
     stop_after_attempt,
     wait_random_exponential,
 )  # for exponential backoff
+from utils.graph_compression import CompressedGraph
 
 COLOR_TO_STR={0: 'Red',1:'Green',2:'Blue'}
 # ACTION_TO_STR={1: 'inspect_bomb',7:'go_to_node_0',8:'go_to_node_3',9:'go_to_node_5',10:'go_to_node_6',11:'go_to_node_8'}
@@ -28,9 +29,10 @@ PRESETS = {
     'hard': {0: (28, 56), 3: (15, 55), 5: (40, 56), 6: (33, 64), 8: (22, 63), 14: (15, 67), 20: (42, 60), 23: (37, 78), 31: (14, 80), 34: (20, 80), 38: (21, 69), 41: (23, 76), 47: (29, 76), 53: (32, 69), 57: (31, 82), 73: (34, 75)},
 }
 class DragonTextEnv():
-    def __init__(self,seed = None, include_agent_action = False,allow_comm = True,act_and_comm = True,tool_per_agent = 2, preset='default'):
+    def __init__(self,seed = None, include_agent_action = False,allow_comm = True,act_and_comm = True,tool_per_agent = 2, preset='default', graph_compression = False, k = 2, compression_method='spectral_k'):
         self.seed = seed
 
+        self.preset = preset
         self.valid_node = list(PRESETS[preset].keys())
         self.include_agent_action = include_agent_action
         self.allow_comm = allow_comm
@@ -38,6 +40,8 @@ class DragonTextEnv():
         self.tool_per_agent = tool_per_agent
         self.cutoff_activated = False
         self.round = 1
+        self.graph_compression = graph_compression
+        self.compression_method = compression_method
 
         self.env = MiniDragonEnv(mission_length = 999,
                         recon_phase_length=0,
@@ -48,6 +52,10 @@ class DragonTextEnv():
                          valid_nodes=PRESETS[preset],
                         obs_wrapper=MiniObs)
         self.env.seed(self.seed)
+
+        if self.graph_compression:
+            self.compressed_graph = CompressedGraph(self.env.graph, method=self.compression_method, k=k, entry_policy="random", seed=self.seed)
+            
 
         if self.tool_per_agent == 2:
             self.env.reset(csv_path =None,
@@ -176,6 +184,9 @@ class DragonTextEnv():
         text += 'Total team score: {score}. '.format(score=str(self.env.score))
         text += f"Previous action results ({action.name.replace('_', ' ') if action != None else 'Invalid'}): " + obs_text + ' '
         text += 'Room contents: '+ room_contents+ ' '
+        if self.graph_compression:
+            current_region = self.compressed_graph.region_of(agent.node.id)
+            text += f"You are in region {current_region}. Your current map view is:  \n" + self.compressed_graph.region_adjlist_str(current_region) + '  \n'
         text += 'Communication is available this round. ' if not self.cutoff_activated else 'Communication is not available this round.'
         # text += 'Teammate Locations: ' + team_location_text + ' '
 
@@ -192,9 +203,9 @@ class DragonTextEnv():
                     text += 'Player {id}: "{action}". '.format(action.name.replace('_', ' ') if action != None else 'Invalid')
 
         if self.allow_comm:
-            text += 'Communication messages sent by your teammates: '
+            text += 'Communication messages sent by your teammates:  \n'
             for a in communications.keys():
-                text += 'Player {id}: "{comm}". '.format(id=a, comm=communications[a])
+                text += 'Player {id}: "{comm}". '.format(id=a, comm=communications[a]) + '  \n'
 
             if tom_questions is not None and not self.cutoff_activated and tom_reasoning:
                 text += 'Before sending your message to the team, consider the following questions (do not answer them): '
@@ -293,6 +304,9 @@ class DragonTextEnv():
         text += 'Total team score: {score}. '.format(score=str(self.env.score))
         text += f"Previous action results ({action.name.replace('_', ' ') if action != None else 'Invalid'}): " + results + ' '
         text += 'Room contents: '+ room_contents+ ' '
+        if self.graph_compression:
+            current_region = self.compressed_graph.region_of(agent.node.id)
+            text += f"You are in region {current_region}. Your current map view is:  \n" + self.compressed_graph.region_adjlist_str(current_region) + '  \n'
         text += 'Communication is available this round. ' if not self.cutoff_activated else 'Communication is not available this round.'
         # text += 'Teammate Locations: ' + team_location_text + ' '
 
@@ -318,7 +332,7 @@ class DragonTextEnv():
         # print(text)
         return text
 
-    def decode_action(self, chat_output):
+    def decode_action(self, chat_output, agent_id = 'alpha'):
         lower = chat_output.lower().replace("“", '"').replace("”", '"')
         if 'action selection' in lower:
             lower = lower.split('action selection', 1)[1]  # keep text to the right of 'action selection'
@@ -337,10 +351,22 @@ class DragonTextEnv():
             tokens = ''.join(ch if ch.isalpha() else ' ' for ch in lower).split()  # tokenisation by spaces and removing non-alpha characters
             if 'inspect' in lower:
                 action = Action.inspect_bomb
-            elif 'move to room' in lower:
-                m = re.search(r'\bmove to room\s*(\d+)\b', lower)
+            elif 'move to' in lower:
+                # Match "move to" followed by "room", "region", or any other word, then a space and an integer or capital letter
+                m = re.search(r'\bmove to (?:room|region)?\s*([a-z]|\d+)\b', lower)
                 if m:
-                    room_id = int(m.group(1))
+                    label = m.group(1)
+                    # If label is a digit, use int(label). If it's a-z, map to integer id using a dict.
+                    if label.isdigit():
+                        room_id = int(label)
+                    else:
+                        label = label.upper()
+                        current_node = self.env.agents[agent_id].node.id
+                        try:
+                            entry_point = self.compressed_graph.entry_point(current_node, label)
+                        except KeyError:
+                            entry_point = None
+                        room_id = int(entry_point) if entry_point is not None else None
                 if room_id in self.valid_node:
                     action = Action.go_to(room_id)
                 else:
@@ -348,7 +374,18 @@ class DragonTextEnv():
             elif 'go_to_node_' in lower:
                 m = re.search(r'go_to_node_(\d+)', lower)
                 if m:
-                    room_id = int(m.group(1))
+                    label = m.group(1)
+                    # If label is a digit, use int(label). If it's a-z, map to integer id using a dict.
+                    if label.isdigit():
+                        room_id = int(label)
+                    else:
+                        label = label.upper()
+                        current_node = self.env.agents[agent_id].node.id
+                        try:
+                            entry_point = self.compressed_graph.entry_point(current_node, label)
+                        except KeyError:
+                            entry_point = None
+                        room_id = int(entry_point) if entry_point is not None else None
             elif 'apply' in lower or 'defuse' in lower:
                 colour = next((tok for tok in tokens if tok in ('red', 'blue', 'green')), None)  # find the first colour token
                 if colour == 'red':
@@ -401,7 +438,7 @@ class DragonTextEnv():
                 round = r['round']
             else:
                 agent_id = r['agent_id']
-                initial_actions[agent_id], communications[agent_id] = self.decode_action(r["chat_output"])
+                initial_actions[agent_id], communications[agent_id] = self.decode_action(r["chat_output"], agent_id=agent_id)
                 _, reward, done, info, obs_text, valid_action = self.step(agent_id, round, initial_actions, communications)
                 round = r['round']
             if round >= ending_round:
@@ -416,7 +453,7 @@ class DragonTextEnv():
                 file = json.load(f)
             chat_agents[agent_id] = ChatAgent(agent_id=file['agent_id'],model=file['model'],temperature=file['temperature'],message_history=file['message_history'],belief=True,allow_comm=True)
 
-            initial_actions[agent_id],communications[agent_id] = self.decode_action(file['message_history'][-2]['content'])
+            initial_actions[agent_id],communications[agent_id] = self.decode_action(file['message_history'][-2]['content'], agent_id=agent_id)
 
         round += 1
 
@@ -439,7 +476,7 @@ class DragonTextEnv():
         for r in json_data:
 
             agent_id = r['agent_id']
-            initial_actions[agent_id], communications[agent_id] = self.decode_action(r["chat_output"])
+            initial_actions[agent_id], communications[agent_id] = self.decode_action(r["chat_output"], agent_id=agent_id)
             _, reward, done, info, obs_text = self.step(agent_id, initial_actions, communications)
             round = r['round']
             row = [round,agent_id,initial_actions[agent_id],communications[agent_id],reward,done,obs_text]
@@ -453,189 +490,208 @@ class DragonTextEnv():
 MAX_RETRIES = 10
 RETRY_DELAY = 3
 
+compression_instructions = "The map is partitioned into letter-labelled regions. Your starting region was region {region}.  \n\
+* **What you can see:** every room inside your current region and each neighbouring region, shown as a single entry labelled by its letter.  \n\
+* **How to move:** to enter an adjacent region, treat it like a room and select the action **Move to Room <letter>**. Once inside, newer region's internal rooms will be revealed and the ones from the origin region hidden.  \n\
+* **Team communication:** always name both room numbers and region letters when asking for help or coordinating. Teammates in other regions cannot see the rooms visible to you.  \n"
 
-MAP_DEFAULT = "0 : 3 5 6 8 \n\
-3 : 0 8 \n\
-5 : 0 6 \n\
-6 : 0 5 8 \n\
-8 : 0 3 6 \n\ "
 
-MAP_NODES_DEFAULT = "0 : \n\
-3 : \n\
-5 : \n\
-6 : \n\
-8 : \n\ "
 
-MAP_EASY = "0 : 6 8 \n\
-6 : 0 8 \n\
-8 : 0 6 \n\ "
+MAP_DEFAULT = "0 : 3 5 6 8  \n\
+3 : 0 8  \n\
+5 : 0 6  \n\
+6 : 0 5 8  \n\
+8 : 0 3 6  \n"
 
-MAP_NODES_EASY = "0 : \n\
-6 : \n\
-8 : \n\ "
+MAP_NODES_DEFAULT = "0 : Unexplored  \n\
+3 : Unexplored  \n\
+5 : Unexplored  \n\
+6 : Unexplored  \n\
+8 : Unexplored  \n"
 
-MAP_MEDIUM = "23 : 47 73 \n\
-34 : 38 41 57 \n\
-38 : 34 53 \n\
-41 : 34 47 \n\
-47 : 23 41 57 73 \n\
-53 : 38 73 \n\
-57 : 34 47 \n\
-73 : 23 47 53 \n\ "
+MAP_EASY = "0 : 6 8  \n\
+6 : 0 8  \n\
+8 : 0 6  \n"
 
-MAP_NODES_MEDIUM = "23 : \n\
-34 : \n\
-38 : \n\
-41 : \n\
-47 : \n\
-53 : \n\
-57 : \n\
-73 : \n\ "
+MAP_NODES_EASY = "0 : Unexplored  \n\
+6 : Unexplored  \n\
+8 : Unexplored  \n"
 
-MAP_HARD = "0 : 3 5 6 8 \n\
-3 : 0 8 14 \n\
-5 : 0 6 \n\
-6 : 0 5 8 20 23 \n\
-8 : 0 3 6 14 \n\
-14 : 3 8 31 34 \n\
-20 : 6 \n\
-23 : 6 47 73 \n\
-31 : 14 34 \n\
-34 : 14 31 38 41 57 \n\
-38 : 34 53 \n\
-41 : 34 47 \n\
-47 : 23 41 57 73 \n\
-53 : 38 73 \n\
-57 : 34 47 \n\
-73 : 23 47 53 \n\ "
+MAP_MEDIUM = "23 : 47 73  \n\
+34 : 38 41 57  \n\
+38 : 34 53  \n\
+41 : 34 47  \n\
+47 : 23 41 57 73  \n\
+53 : 38 73  \n\
+57 : 34 47  \n\
+73 : 23 47 53 \n"
 
-MAP_NODES_HARD = "0 : \n\
-3 : \n\
-5 : \n\
-6 : \n\
-8 : \n\
-14 : \n\
-20 : \n\
-23 : \n\
-31 : \n\
-34 : \n\
-38 : \n\
-41 : \n\
-47 : \n\
-53 : \n\
-57 : \n\
-73 : \n\ "
+MAP_NODES_MEDIUM = "23 : Unexplored  \n\
+34 : Unexplored  \n\
+38 : Unexplored  \n\
+41 : Unexplored  \n\
+47 : Unexplored  \n\
+53 : Unexplored  \n\
+57 : Unexplored  \n\
+73 : Unexplored  \n"
 
-MAP_VILLAGE = "0 : 3 5 6 8 \n\
-3 : 0 8 14 15 17 21 \n\
-5 : 0 6 12 16 22 27 \n\
-6 : 0 5 8 11 20 23 24 \n\
-8 : 0 3 6 14 \n\
-11 : 6 \n\
-12 : 5 \n\
-14 : 3 8 17 28 31 34 \n\
-15 : 3 \n\
-16 : 5 \n\
-17 : 3 14 21 40 \n\
-20 : 6 24 26 27 \n\
-21 : 3 17 \n\
-22 : 5 \n\
-23 : 6 24 45 47 73 \n\
-24 : 6 20 23 26 32 46 \n\
-26 : 20 24 32 36 \n\
-27 : 5 20 \n\
-28 : 14 33 \n\
-31 : 14 34 40 48 49 \n\
-32 : 24 26 43 \n\
-33 : 28 \n\
-34 : 14 31 38 41 57 \n\
-36 : 26 \n\
-38 : 34 53 \n\
-40 : 17 31 52 \n\
-41 : 34 47 \n\
-43 : 32 51 \n\
-45 : 23 48 55 65 \n\
-46 : 24 58 67 70 72 \n\
-47 : 23 41 57 73 \n\
-48 : 31 45 49 66 68 69 \n\
-49 : 31 48 56 \n\
-51 : 43 63 64 \n\
-52 : 40 \n\
-53 : 38 73 \n\
-55 : 45 \n\
-56 : 49 \n\
-57 : 34 47 \n\
-58 : 46 \n\
-63 : 51 \n\
-64 : 51 \n\
-65 : 45 71 \n\
-66 : 48 \n\
-67 : 46 \n\
-68 : 48 75 77 \n\
-69 : 48 \n\
-70 : 46 \n\
-71 : 65 \n\
-72 : 46 \n\
-73 : 23 47 53 \n\
-75 : 68 \n\
-77 : 68 \n\ "
+MAP_HARD = "0 : 3 5 6 8  \n\
+3 : 0 8 14  \n\
+5 : 0 6  \n\
+6 : 0 5 8 20 23  \n\
+8 : 0 3 6 14  \n\
+14 : 3 8 31 34  \n\
+20 : 6  \n\
+23 : 6 47 73  \n\
+31 : 14 34  \n\
+34 : 14 31 38 41 57  \n\
+38 : 34 53  \n\
+41 : 34 47  \n\
+47 : 23 41 57 73  \n\
+53 : 38 73  \n\
+57 : 34 47  \n\
+73 : 23 47 53  \n"
 
-MAP_NODES_VILLAGE = "0 : \n\
-3 : \n\
-5 : \n\
-6 : \n\
-8 : \n\
-11 : \n\
-12 : \n\
-14 : \n\
-15 : \n\
-16 : \n\
-17 : \n\
-20 : \n\
-21 : \n\
-22 : \n\
-23 : \n\
-24 : \n\
-26 : \n\
-27 : \n\
-28 : \n\
-31 : \n\
-32 : \n\
-33 : \n\
-34 : \n\
-36 : \n\
-38 : \n\
-40 : \n\
-41 : \n\
-43 : \n\
-45 : \n\
-46 : \n\
-47 : \n\
-48 : \n\
-49 : \n\
-51 : \n\
-52 : \n\
-53 : \n\
-55 : \n\
-56 : \n\
-57 : \n\
-58 : \n\
-63 : \n\
-64 : \n\
-65 : \n\
-66 : \n\
-67 : \n\
-68 : \n\
-69 : \n\
-70 : \n\
-71 : \n\
-72 : \n\
-73 : \n\
-75 : \n\
-77 : \n\ "
+MAP_NODES_HARD = "0 : Unexplored  \n\
+3 : Unexplored  \n\
+5 : Unexplored  \n\
+6 : Unexplored  \n\
+8 : Unexplored  \n\
+14 : Unexplored  \n\
+20 : Unexplored  \n\
+23 : Unexplored  \n\
+31 : Unexplored  \n\
+34 : Unexplored  \n\
+38 : Unexplored  \n\
+41 : Unexplored  \n\
+47 : Unexplored  \n\
+53 : Unexplored  \n\
+57 : Unexplored  \n\
+73 : Unexplored  \n"
+
+MAP_VILLAGE = "0 : 3 5 6 8  \n\
+3 : 0 8 14 15 17 21  \n\
+5 : 0 6 12 16 22 27  \n\
+6 : 0 5 8 11 20 23 24  \n\
+8 : 0 3 6 14  \n\
+11 : 6  \n\
+12 : 5  \n\
+14 : 3 8 17 28 31 34  \n\
+15 : 3  \n\
+16 : 5  \n\
+17 : 3 14 21 40  \n\
+20 : 6 24 26 27  \n\
+21 : 3 17  \n\
+22 : 5  \n\
+23 : 6 24 45 47 73  \n\
+24 : 6 20 23 26 32 46  \n\
+26 : 20 24 32 36  \n\
+27 : 5 20  \n\
+28 : 14 33  \n\
+31 : 14 34 40 48 49  \n\
+32 : 24 26 43  \n\
+33 : 28  \n\
+34 : 14 31 38 41 57  \n\
+36 : 26  \n\
+38 : 34 53  \n\
+40 : 17 31 52  \n\
+41 : 34 47  \n\
+43 : 32 51  \n\
+45 : 23 48 55 65  \n\
+46 : 24 58 67 70 72  \n\
+47 : 23 41 57 73  \n\
+48 : 31 45 49 66 68 69  \n\
+49 : 31 48 56  \n\
+51 : 43 63 64  \n\
+52 : 40  \n\
+53 : 38 73  \n\
+55 : 45  \n\
+56 : 49  \n\
+57 : 34 47  \n\
+58 : 46  \n\
+63 : 51  \n\
+64 : 51  \n\
+65 : 45 71  \n\
+66 : 48  \n\
+67 : 46  \n\
+68 : 48 75 77  \n\
+69 : 48  \n\
+70 : 46  \n\
+71 : 65  \n\
+72 : 46  \n\
+73 : 23 47 53  \n\
+75 : 68  \n\
+77 : 68  \n"
+
+MAP_NODES_VILLAGE = "0 : Unexplored  \n\
+3 : Unexplored  \n\
+5 : Unexplored  \n\
+6 : Unexplored  \n\
+8 : Unexplored  \n\
+11 : Unexplored  \n\
+12 : Unexplored  \n\
+14 : Unexplored  \n\
+15 : Unexplored  \n\
+16 : Unexplored  \n\
+17 : Unexplored  \n\
+20 : Unexplored  \n\
+21 : Unexplored  \n\
+22 : Unexplored  \n\
+23 : Unexplored  \n\
+24 : Unexplored  \n\
+26 : Unexplored  \n\
+27 : Unexplored  \n\
+28 : Unexplored  \n\
+31 : Unexplored  \n\
+32 : Unexplored  \n\
+33 : Unexplored  \n\
+34 : Unexplored  \n\
+36 : Unexplored  \n\
+38 : Unexplored  \n\
+40 : Unexplored  \n\
+41 : Unexplored  \n\
+43 : Unexplored  \n\
+45 : Unexplored  \n\
+46 : Unexplored  \n\
+47 : Unexplored  \n\
+48 : Unexplored  \n\
+49 : Unexplored  \n\
+51 : Unexplored  \n\
+52 : Unexplored  \n\
+53 : Unexplored  \n\
+55 : Unexplored  \n\
+56 : Unexplored  \n\
+57 : Unexplored  \n\
+58 : Unexplored  \n\
+63 : Unexplored  \n\
+64 : Unexplored  \n\
+65 : Unexplored  \n\
+66 : Unexplored  \n\
+67 : Unexplored  \n\
+68 : Unexplored  \n\
+69 : Unexplored  \n\
+70 : Unexplored  \n\
+71 : Unexplored  \n\
+72 : Unexplored  \n\
+73 : Unexplored  \n\
+75 : Unexplored  \n\
+77 : Unexplored  \n"
+
+MAP_NODES_DEFAULT_ALT = "Unexplored Rooms: " + ", ".join(["0", "3", "5", "6", "8"]) + "(remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
+
+MAP_NODES_EASY_ALT = "Unexplored Rooms: " + ", ".join(["0", "6", "8"]) + "(remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
+
+MAP_NODES_MEDIUM_ALT = "Unexplored Rooms: " + ", ".join(["23", "34", "38", "41", "47", "53", "57", "73"]) + "(remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
+
+MAP_NODES_HARD_ALT = "Unexplored Rooms: " + ", ".join(["0", "3", "5", "6", "8", "14", "20", "23", "31", "34", "38", "41", "47", "53", "57", "73"]) + "(remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
+
+MAP_NODES_VILLAGE_ALT = "Unexplored Rooms: " + ", ".join(["0", "3", "5", "6", "8", "11", "12", "14", "15", "16", "17", "20", "21", "22", "23", "24", "26", "27", "28", "31", "32", "33", "34", "36", "38", "40", "41", "43", "45", "46", "47", "48", "49", "51", "52", "53", "55", "56", "57", "58", "63", "64", "65", "66", "67", "68", "69", "70", "71", "72", "73", "75", "77"
+]) + "(remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
+
+
 
 PRESET_MAPS = {
-    'village': (MAP_VILLAGE, MAP_NODES_VILLAGE),
+    'village': (MAP_VILLAGE, MAP_NODES_VILLAGE_ALT),
     'default': (MAP_DEFAULT, MAP_NODES_DEFAULT),
     'easy': (MAP_EASY, MAP_NODES_EASY),
     'medium': (MAP_MEDIUM, MAP_NODES_MEDIUM),
@@ -669,9 +725,6 @@ Observation: While you can only see what's in your current room and read text me
 Extra challenge: at each round, there is a chance to lose communication with your teamates for the duration of the entire round. You will be informed with the message 'Communication cutoff: no communication available this round'. In this scenario, you should choose your next action based on all previous information and, when communication is available again in the next round, you should add to your regular team message any relevant information that your teamates might have missed during the cutoff. \
 You will be playing as Player {agent_id}. To facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules. Feel free to ask clarifying questions if needed. I'll supply the necessary information as we progress. Are you ready to take on this explosive challenge?"
 
-# BACKGROUND_PROMPT = "Welcome to our interactive text game! In this game, you'll assume the role of a specialist on a search and rescue team. Alongside two other players, you'll navigate a five-room environment with a mission to defuse five hidden bombs. The Map: Imagine a network of rooms represented by a connected graph where each node corresponds to a room, and the edges between nodes depict hallways. The rooms are numbered 0, 3, 6, 5, and 8. Room 0 is connected to all other rooms. Room 5 shares a hallway with room 6, room 3 is linked to room 8, and room 8 is also connected with room 6. You can only travel to adjacent, directly connected rooms each turn. The Challenge: Scattered among these rooms are five bombs, each coded with different phases represented by colors. To defuse them, you'll need to use the correct wire-cutting tools in the correct sequence. There are one-phase, two-phase, and three-phase bombs, needing 1, 2, or 3 color-coded tool applications in sequence to disarm. For instance, a bomb with a red-green phase sequence requires the red tool first, then the green one. The challenge is that the bomb locations and sequences are unknown to players at the start. Your Tools: Each player is equipped with two color-coded wire cutters. As player Alpha, you have red and green tools, player Bravo wields green and blue, and player Charlie possesses blue and red. Your Actions: Each round, you can opt to do one of the following: 1) Move to an adjacent room, 2) Inspect a bomb's phase sequence in your current room, 3) Apply your wire cutters to a bomb, or 4) send text messages to both of your teammates. Observation: While you can only see what's in your current room and read text messages from teammates. You'll also be informed of the current round number. Any successful bomb defusal, along with the accumulated team score, is broadcasted to all players. Points are awarded based on the number of tools used for defusing a bomb, with each tool use worth 10 points. Remember, your actions must adhere strictly to these rules. Feel free to ask clarifying questions if needed. I'll supply the necessary information as we progress. You will be playing as Player {agent_id}. Are you ready to take on this explosive challenge?"
-# INSTRUCT_PROMPT = "Your current observation is: Round: 1. Total team score: 0. Observation: You are currently in Room 0 with both of your teammates. In the room you also found bomb 1 with unknown sequence. There is no other bomb in the current room. Teammate Locations: Player alpha is in Room 0; Player bravo is in Room 0; Player charlie is in Room 0. Communication messages sent by your teammates: Player alpha: "". Player bravo: "". Player charlie: "". Given the above observation, what is your next action?"
-
 INITIAL_BELIEF = "Below is your current belief about game state based on your previous observations about the environment and interactions with your teammates. Your role: You are playing as Player {agent_id}.\n Current round: 0.\n Total team score: 0.\n Restuls: You moved to Room {initial_node}. In the new room you found Player alpha, Player bravo, Player charlie, and Bomb {initial_bomb}.\n Room Contents: You are currently in Room {initial_node} with both of your teammates. In the room you also found bomb {initial_bomb} with unknown sequence. There is no other bomb in the current room.\n Teammate Locations: Player alpha is in Room {initial_node}; Player bravo is in Room {initial_node}; Player charlie is in Room {initial_node}.\n Room connectivity: Room 0 is connected to room 3, 5, 6,8. Room 3 is connected to room 0. Room 5 is connected to room 0 and 6. Room 6 is connected to room 0 and 8. Room 8 is connected to room 0 and 6.\n Bomb Intel: Bomb {initial_bomb}: Located in Room {initial_node}. The phase sequence is Unknown. Ohter bomb details currently unknown.\n Communication messages sent by your teammates: Player alpha: None. Player bravo: None. Player charlie: None.\n Tool inventory: Alpha: Equipped with red and green wire cutters. Bravo: Equipped with green and blue wire cutters. Charlie: Equipped with red and blue wire cutters.\n Available action options: 1. To move to an adjacent room, say: 'Move to Room X'. 2. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. 3. To apply a wire cutter tool, say: 'Apply X Tool'. 4. To send a message to your teammates, say: 'Message to Team: \"Your Message\"'."
 
 INITIAL_BELIEF_NOCOMM = "Below is your current belief about game state based on your previous observations about the environment and interactions with your teammates. Your role: You are playing as Player {agent_id}.\n Current round: 0.\n Total team score: 0.\n Restuls: You moved to Room {initial_node}. In the new room you found Player alpha, Player bravo, Player charlie, and Bomb {initial_bomb}.\n Room Contents: You are currently in Room {initial_node} with both of your teammates. In the room you also found bomb {initial_bomb} with unknown sequence. There is no other bomb in the current room.\n Teammate Locations: Player alpha is in Room {initial_node}; Player bravo is in Room {initial_node}; Player charlie is in Room {initial_node}.\n Room connectivity: Room 0 is connected to room 3, 5, 6,8. Room 3 is connected to room 0. Room 5 is connected to room 0 and 6. Room 6 is connected to room 0 and 8. Room 8 is connected to room 0 and 6.\n Bomb Intel: Bomb {initial_bomb}: Located in Room {initial_node}. The phase sequence is Unknown. Ohter bomb details currently unknown.\n Tool inventory: Alpha: Equipped with red and green wire cutters. Bravo: Equipped with green and blue wire cutters. Charlie: Equipped with red and blue wire cutters.\n Available action options: 1. To move to an adjacent room, say: 'Move to Room X'. 2. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. 3. To apply a wire cutter tool, say: 'Apply X Tool'. 4."
@@ -686,96 +739,110 @@ INITIAL_PROMPT = "Given the above belief state, {agent_id}, what is your next ac
 
 CUTOFF = 'Communication cutoff: no communication available this round'
 
+communication_cutoff_instructions = "* Continue acting based on previous information.\n\
+* When communication returns, share any information missed during the cutoff.\n\n"
 
-BACKGROUND_PROMPT_NEW_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n----------------  ROLE AND OBJECTIVE  ----------------\n* Defuse all 5 hidden bombs as fast as possible.\n* A team earns 10 x (number of phases) points for each bomb defused.\n* Maximize the final team score.\n\n----------------  ENVIRONMENT MAP  ----------------  \nThe facility is a connected graph of rooms labeled with integers:\n{map}\nYou may move only to rooms listed as directly connected to your current location.\n\n----------------  BOMB TYPES  ----------------\n* Bombs may have 1, 2, or 3 color phases. Defuse them by applying the matching colored tools in order.\n\n----------------  TOOLS PER PLAYER  ----------------\n* Alpha   - red, green\n* Bravo   - green, blue\n* Charlie - blue, red\n\n----------------  VALID ACTIONS  ----------------\n1. Move to an adjacent room     -> Move to Room X\n2. Inspect a bomb's phase list  -> Inspect Bomb\n3. Apply a wire cutter tool     -> Apply <Color> Tool\n\n----------------  COMMUNICATION  ----------------\n* Each round you may append ONE message to teammates (they will read it next round).\n\n----------------  OBSERVATION INFO  ----------------  \nAt the start of every round you learn:\n* Current round number and cumulative team score\n* Your room contents (bombs, players)\n* Locations of teammates\n* Messages sent in the previous round\n\n----------------  REPLY FORMAT  ----------------  \nTo facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules.\nAre you ready to begin?\""
-
-
-BACKGROUND_PROMPT_CUTOFF_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n\
+BACKGROUND_PROMPT_NEW_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n\
 ----------------  ROLE AND OBJECTIVE  ----------------\n\
-* Defuse all 5 hidden bombs as fast as possible.\n* A team earns 10 x (number of phases) points for each bomb defused.\n* Maximize the final team score.\n\n\
+* Defuse all 5 hidden bombs as fast as possible.\n\
+* A team earns 10 x (number of phases) points for each bomb defused.\n\
+* Maximize the final team score.\n\n\
 ----------------  ENVIRONMENT MAP  ----------------  \n\
 The facility is a connected graph of rooms labeled with integers:\n\
-{map}\n\
-\nYou may move only to rooms listed as directly connected to your current location.\n\n\
+{compression_intructions}\n\
+Your starting region view, where each line is 'Room : directly connected to Rooms'  \n\
+{map}  \n\
+You may move only to rooms listed as directly connected to your current location.\n\n\
 ----------------  BOMB TYPES  ----------------\n\
 * Bombs may have 1, 2, or 3 color phases. Defuse them by applying the matching colored tools in order.\n\n\
 ----------------  TOOLS PER PLAYER  ----------------\n\
-* Alpha   - red, green\n* Bravo   - green, blue\n* Charlie - blue, red\n\n\
+* Alpha   - red, green\n\
+* Bravo   - green, blue\n\
+* Charlie - blue, red\n\n\
 ----------------  VALID ACTIONS  ----------------\n\
-1. Move to an adjacent room     -> Move to Room X\n2. Inspect a bomb's phase list  -> Inspect Bomb\n3. Apply a wire cutter tool     -> Apply <Color> Tool\n\n\
+1. Move to an adjacent room/region     -> Move to Room X\n\
+2. Inspect a bomb's phase list  -> Inspect Bomb\n\
+3. Apply a wire cutter tool     -> Apply <Color> Tool\n\n\
 ----------------  COMMUNICATION  ----------------\n\
-* Each round you may append ONE message to teammates (they will read it next round).\n* If communication is cut you will receive: \"Communication cutoff: no communication available this round\".\n  - Continue acting based on previous information.\n  - When communication returns, share any information missed during the cutoff.\n\n\
+* Each round you may append ONE message to teammates (they will read it next round).\n\
+{communication_cutoff_instructions}\n\n\
 ----------------  OBSERVATION INFO  ----------------  \n\
-At the start of every round you learn:\n* Current round number and cumulative team score\n* Your room contents (bombs, players)\n* Locations of teammates\n* Messages sent in the previous round\n\n\
+At the start of every round you learn:\n\
+* Current round number and cumulative team score\n\
+* Your room contents (bombs, players)\n\
+* Locations of teammates\n\
+* Messages sent in the previous round\n\n\
 ----------------  REPLY FORMAT  ----------------  \n\
-To facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules.\nAre you ready to begin?\""
+To facilitate our interaction, reply your action selection and communication messages in this fixed format: Action selection: Your action. Message to Team: “Your Message”. To move to an adjacent room, say: 'Move to Room X'. To inspect the sequence of a bomb in your current room, say: 'Inspect Bomb'. To apply a wire cutter tool, say: 'Apply X Tool'. Remember, your replies must adhere strictly to these rules.\n\
+Are you ready to begin?\""
 
 
 INITIAL_BELIEF_IMPROVED = "----------------  BELIEF STATE  ----------------  \n\
-Role: Player {agent_id}\n\
+Role: Player {agent_id}  \n\
 Current round: 1   |   Team score: 0\n\
 \n\
 ----------------  POSITION  ----------------  \n\
-You are in Room {initial_node}\n\
-Other players here: alpha, bravo, charlie\n\
+You are in Room {initial_node}  \n\
+Other players here: alpha, bravo, charlie  \n\
 \n\
 ----------------  ROOM CONTENTS  ----------------  \n\
-Bomb {initial_bomb}: sequence UNKNOWN\n\
-No other bombs detected in this room.\n\
-Contents of all rooms:\n  \
+Bomb {initial_bomb}: sequence UNKNOWN  \n\
+No other bombs detected in this room.  \n\
+Contents of all rooms:  \n\
 {map_nodes}\
 \n\
 \n\
 ----------------  TEAMMATE LOCATIONS  ----------------  \n\
-alpha   - Room {initial_node}\n\
-bravo   - Room {initial_node}\n\
-charlie - Room {initial_node}\n\
+alpha   - Room {initial_node}  \n\
+bravo   - Room {initial_node}  \n\
+charlie - Room {initial_node}  \n\
 \n\
 ----------------  MAP (adjacency list)  ----------------  \n\
-Each line shows: Room : directly connected rooms  \n\
-{map}\
+{compression_intructions}  \n\
+Each line shows 'Room : directly connected rooms'  \n\
+{map}\n\
 \n\
 ----------------  KNOWN BOMBS  ----------------  \n\
-Bomb {initial_bomb}  |  Room {initial_node}  |  Phase list: UNKNOWN | Status: UNKNOWN\n\
+Bomb {initial_bomb}  |  Room {initial_node}  |  Phase list: UNKNOWN | Status: UNKNOWN  \n\
 (4 bombs remain unlocated, 0 bombs defused)\n\
 \n\
 ----------------  RECENT MESSAGES  ----------------  \n\
-alpha   : None\n\
-bravo   : None\n\
-charlie : None\n\
+alpha   : None  \n\
+bravo   : None  \n\
+charlie : None  \n\
 \n\
 ----------------  TOOL INVENTORY  ----------------  \n\
-alpha   - red, green\n\
-bravo   - green, blue\n\
-charlie - red, blue\n\
+alpha   - red, green  \n\
+bravo   - green, blue  \n\
+charlie - red, blue  \n\
 \n\
 ----------------  INFORMATON I SHOULD SHARE  ----------------  \n\
 \n\
 ----------------  ACTION SYNTAX  ----------------  \n\
-Move         : Move to Room X\n\
-Inspect Bomb : Inspect Bomb\n\
-Apply tool   : Apply <Color> Tool\n\
+Move         : Move to Room X  \n\
+Inspect Bomb : Inspect Bomb  \n\
+Apply tool   : Apply <Color> Tool  \n\
 Send message : Message to Team: \"...\"  \n\
-There is no standby action, but you can inspect a bomb if there is any in the room.\
+There is no standby action, but you can inspect a bomb if there is any in the room.  \n\
 --------------------------------------------------\""
 
 
-TIPS = "GENERAL COORDINATION AND MEMORY TIPS:\n\
-1. Inspection Rule: If an uninspected bomb is in your current room **and two or more teammates are present**, ONLY the teammate whose call-sign comes first alphabetically performs \"Inspect Bomb\" (unless a different plan was clearly agreed). Everyone else should spend the turn on a higher-value task (move, cut, etc.).\n\
-2. Memory Rule: When asked to update your belief state, add any other useful information not already contained in the previous belief state. Examples: rooms visited, bomb locations, each bomb's phase list and progress. Do not delete a bomb from your belief state, change its status to DEFUSED. Your memory of the history of events is limited, but you always keep your previous belief state.\n\
-3. Bomb Counter Rule: Five bombs exist at the start. Track how many remain. Pay attention to the communication messages to keep track of bombs defused, location or progress towards defusal. Be explicit when communicating about bomb status/phases.\n\
+TIPS = "GENERAL COORDINATION AND MEMORY TIPS:  \n\
+1. Inspection Rule: If an uninspected bomb is in your current room **and two or more teammates are present**, ONLY the teammate whose call-sign comes first alphabetically performs \"Inspect Bomb\" (unless a different plan was clearly agreed). Everyone else should spend the turn on a higher-value task (move, cut, etc.).  \n\
+2. Memory Rule: When asked to update your belief state, add any other useful information not already contained in the previous belief state. Examples: rooms visited, bomb locations, each bomb's phase list and progress. Do not delete a bomb from your belief state, change its status to DEFUSED. Your memory of the history of events is limited, but you always keep your previous belief state.  \n\
+3. Bomb Counter Rule: Five bombs exist at the start. Track how many remain. Pay attention to the communication messages to keep track of bombs defused, location or progress towards defusal. Be explicit when communicating about bomb status/phases.  \n\
 4. No Duplicate Tools Rule: Before applying a tool, check messages and your belief state to be sure a teammate will not apply the same tool to the same bomb in the same round. Assume that the teammate whose call-sign comes first alphabetically will perform a defusal action if he is in the same room and if he has the corresponding tool.\n\
-5. Sequence Coordination Rule: After every successful cut on a multi-phase bomb, broadcast the remaining color sequence. The teammate with the next required color should position in that room; others should keep exploring.\n\
-6. Same Round Coordination Rule: Assume agents whose call-sign comes first alphabetically will act before you and will apply their tool if they can and use this to coordinate your tool use. Example: In a given round, agents A, B and C are in the same room with a bomb with know sequence green-red-blue. If A has the green tool, B can expect A is going to use it and try to use red if he has the red tool. The same applies to C.\n\
-7. Exploration Rule: Do not cluster without reason. When no bomb needs multi-player attention, each teammate should move to a different unexplored or partially explored room to maximise information gain.\n\
-8. Cutoff Recovery Rule: If you receive \"Communication cutoff\", continue acting based on memory. When comms return, send a SUMMARY listing all actions and observations since the last successful message.\n\
-9. Never assume your belief state is ground truth: correct false information if directly contradicted by new evidence.\n\
+5. Sequence Coordination Rule: After every successful cut on a multi-phase bomb, broadcast the remaining color sequence. The teammate with the next required color should position in that room; others should keep exploring.  \n\
+6. Same Round Coordination Rule: Assume agents whose call-sign comes first alphabetically will act before you and will apply their tool if they can and use this to coordinate your tool use. Example: In a given round, agents A, B and C are in the same room with a bomb with know sequence green-red-blue. If A has the green tool, B can expect A is going to use it and try to use red if he has the red tool. The same applies to C.  \n\
+7. Exploration Rule: Do not cluster without reason. When no bomb needs multi-player attention, each teammate should move to a different unexplored or partially explored room to maximise information gain.  \n\
+8. Cutoff Recovery Rule: If you receive \"Communication cutoff\", continue acting based on memory. When comms return, send a SUMMARY listing all actions and observations since the last successful message.  \n\
+9. Never assume your belief state is ground truth: correct false information if directly contradicted by new evidence.  \n\
 10. Append to your belief state precious information you have not already shared with your team, like bomb phases/location you discovered.\n"
 
 
 
 class ChatAgent():
-    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False, improved = False, tips = False, preset='default'):
+    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False, improved = False, tips = False, preset='default', graph_compression=False, initial_view=None, initial_region='A'):
         self.agent_id = agent_id
         self.model = model
         self.temperature=temperature
@@ -789,25 +856,37 @@ class ChatAgent():
         self.improved = improved
         self.tips = tips
         self.round = 1
+        self.graph_compression = graph_compression
+        if graph_compression == True:
+            self.view = initial_view
+        else:
+            self.view = PRESET_MAPS[preset][0]
 
         self.belief = belief
         # self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
         self.allow_comm = allow_comm
         if self.allow_comm:
+            if not self.graph_compression:
+                global compression_instructions
+                compression_instructions = ""
+            else:
+                compression_instructions = compression_instructions.format(region=initial_region)
             if self.cutoff:
                 if self.improved:
-                    BACKGROUND_PROMPT = BACKGROUND_PROMPT_CUTOFF_IMPROVED
+                    BACKGROUND_PROMPT = BACKGROUND_PROMPT_NEW_IMPROVED
                 else:
                     BACKGROUND_PROMPT = BACKGROUND_PROMPT_CUTOFF
             else:
                 if self.improved:
+                    global communication_cutoff_instructions
+                    communication_cutoff_instructions = ""
                     BACKGROUND_PROMPT = BACKGROUND_PROMPT_NEW_IMPROVED
                 else:
                     BACKGROUND_PROMPT = BACKGROUND_PROMPT_NEW
             if self.tips:
                 BACKGROUND_PROMPT += '\n\n' + TIPS
             if self.improved:
-                self.last_belief = INITIAL_BELIEF_IMPROVED.format(agent_id=agent_id, initial_bomb=initial_bomb,initial_node=initial_node,map=PRESET_MAPS[preset][0],map_nodes=PRESET_MAPS[preset][1])
+                self.last_belief = INITIAL_BELIEF_IMPROVED.format(agent_id=agent_id, initial_bomb=initial_bomb,initial_node=initial_node,map=self.view,map_nodes=PRESET_MAPS[preset][1], communication_cutoff_instructions=communication_cutoff_instructions,compression_intructions=compression_instructions)
             else:
                 self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
         else:
@@ -817,7 +896,7 @@ class ChatAgent():
         if message_history is None:
             self.message_history = [
                 {"role": "system", "content": 'You are playing a text game with the user.'},
-                {"role": "user", "content": BACKGROUND_PROMPT.format(agent_id = agent_id, map=PRESET_MAPS[preset][0])},
+                {"role": "user", "content": BACKGROUND_PROMPT.format(agent_id = agent_id, map=self.view, compression_intructions=compression_instructions, communication_cutoff_instructions=communication_cutoff_instructions)},
                 # {"role": "user", "content": INSTRUCT_PROMPT},
             ]
             if self.belief:

@@ -47,6 +47,12 @@ parser.add_argument('--tips', action='store_true', default=False,
                     help='enable tips for agents')
 parser.add_argument('--preset', type=str, choices=list(PRESETS.keys()), default='default',
                     help='choose the preset map size')
+parser.add_argument('--graph_compression', action='store_true', default=False,
+                    help='enable graph compression for the environment, which allows agents to have a compact view of the environment')
+parser.add_argument('--k', type=int, default=2,
+                    help='number of regions (supernodes) in the graph compression if activated')
+parser.add_argument('--compression_method', type=str, default='balanced_bfs',
+                    help='method for graph compression (e.g., kernighan-lin, louvain, spectral_k, etc.)')
 
 # model
 args = parser.parse_args()
@@ -84,18 +90,27 @@ tom_reasoning = args.tom_reasoning
 improved = args.improved
 tips = args.tips
 preset = args.preset
+graph_compression = args.graph_compression
+compression_method = args.compression_method
+k = args.k
 
 np.random.seed(seed)
 
-env = DragonTextEnv(seed = seed,include_agent_action = args.include_agent_action,allow_comm = allow_comm,act_and_comm = act_and_comm,tool_per_agent = args.tool_per_agent, preset = preset)
+env = DragonTextEnv(seed = seed,include_agent_action = args.include_agent_action,allow_comm = allow_comm,act_and_comm = act_and_comm,tool_per_agent = args.tool_per_agent, preset = preset, graph_compression = graph_compression, k = k, compression_method = compression_method)
 Action = env.env.action_enum
 obs = env.env._get_obs()
 info = {}
 initial_node = str(env.env.agents['alpha'].node.id)
 initial_bomb = str(env.env.agents['alpha'].bomb.id)
-chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset),
-               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset),
-               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset)}
+if graph_compression:
+    initial_region = env.compressed_graph.region_of(int(initial_node))
+    initial_view = env.compressed_graph.region_adjlist_str(initial_region)
+else:
+    initial_region = None
+    initial_view = None
+chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region),
+               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region),
+               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region)}
 initial_actions = {'alpha':Action.go_to(int(initial_node)),'bravo':Action.go_to(int(initial_node)),'charlie':Action.go_to(int(initial_node))}
 communications = {'alpha':'None','bravo':'None','charlie':'None'}
 
@@ -120,7 +135,8 @@ with open(DATA_PATH + 'summary.csv', 'w+', encoding='utf-8') as f:
         f.write(',')
     f.write('\n')
 
-
+if graph_compression:
+    env.compressed_graph.draw(path = os.path.join(DATA_PATH, 'compressed_graph.pdf'))
 
 who_has_inspected_what = {'alpha':set(),'bravo':set(),'charlie':set()}
 
@@ -137,7 +153,7 @@ while not done['__all__'] and round <= args.max_step:
         # if agent_id not in initial_actions.keys():
         chat_output[agent_id] = chat_agent.step()
 
-        initial_actions[agent_id], communications[agent_id] = env.decode_action(chat_output[agent_id])
+        initial_actions[agent_id], communications[agent_id] = env.decode_action(chat_output[agent_id], agent_id=agent_id)
         # initial_actions[agent_id], communications[agent_id] = env.decode_action_API(chat_output[agent_id])
 
         _, reward, done, info, obs_text, valid_action, results[agent_id] = env.step(agent_id, round,initial_actions, communications, tom_questions=tom_questions, tom_reasoning=tom_reasoning)
