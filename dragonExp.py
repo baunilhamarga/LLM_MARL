@@ -5,7 +5,7 @@ from dragonTextEnv import DragonTextEnv, ChatAgent, PRESETS
 import numpy as np
 import time
 from pathlib import Path
-import utils
+import utils.utils as utils
 
 
 parser = argparse.ArgumentParser(description='Text interface for LLM agent')
