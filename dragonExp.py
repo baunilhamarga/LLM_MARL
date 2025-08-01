@@ -53,6 +53,8 @@ parser.add_argument('--k', type=int, default=2,
                     help='number of regions (supernodes) in the graph compression if activated')
 parser.add_argument('--compression_method', type=str, default='balanced_bfs',
                     help='method for graph compression (e.g., kernighan-lin, louvain, spectral_k, etc.)')
+parser.add_argument('--include_visited_nodes', action='store_true', default=False,
+                    help='include information about per-agent visited nodes in the agent observations')
 
 # model
 args = parser.parse_args()
@@ -93,10 +95,11 @@ preset = args.preset
 graph_compression = args.graph_compression
 compression_method = args.compression_method
 k = args.k
+include_visited_nodes = args.include_visited_nodes
 
 np.random.seed(seed)
 
-env = DragonTextEnv(seed = seed,include_agent_action = args.include_agent_action,allow_comm = allow_comm,act_and_comm = act_and_comm,tool_per_agent = args.tool_per_agent, preset = preset, graph_compression = graph_compression, k = k, compression_method = compression_method)
+env = DragonTextEnv(seed = seed,include_agent_action = args.include_agent_action,allow_comm = allow_comm,act_and_comm = act_and_comm,tool_per_agent = args.tool_per_agent, preset = preset, graph_compression = graph_compression, k = k, compression_method = compression_method, include_visited_nodes=include_visited_nodes)
 Action = env.env.action_enum
 obs = env.env._get_obs()
 info = {}
@@ -105,14 +108,18 @@ initial_bomb = str(env.env.agents['alpha'].bomb.id)
 if graph_compression:
     initial_region = env.compressed_graph.region_of(int(initial_node))
     initial_view = env.compressed_graph.region_adjlist_str(initial_region)
+    nodes_per_region_str = env.compressed_graph.nodes_per_region_str()
 else:
     initial_region = None
     initial_view = None
-chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region),
-               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region),
-               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region)}
+    nodes_per_region_str = None
+chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region, nodes_per_region_str=nodes_per_region_str),
+               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region, nodes_per_region_str=nodes_per_region_str),
+               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region, nodes_per_region_str=nodes_per_region_str)}
 initial_actions = {'alpha':Action.go_to(int(initial_node)),'bravo':Action.go_to(int(initial_node)),'charlie':Action.go_to(int(initial_node))}
 communications = {'alpha':'None','bravo':'None','charlie':'None'}
+for agent_id in chat_agents.keys():
+    env.visited_nodes[agent_id] = [int(initial_node)]
 
 chat_output = {}
 actions = {}

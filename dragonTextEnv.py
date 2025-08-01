@@ -29,7 +29,7 @@ PRESETS = {
     'hard': {0: (28, 56), 3: (15, 55), 5: (40, 56), 6: (33, 64), 8: (22, 63), 14: (15, 67), 20: (42, 60), 23: (37, 78), 31: (14, 80), 34: (20, 80), 38: (21, 69), 41: (23, 76), 47: (29, 76), 53: (32, 69), 57: (31, 82), 73: (34, 75)},
 }
 class DragonTextEnv():
-    def __init__(self,seed = None, include_agent_action = False,allow_comm = True,act_and_comm = True,tool_per_agent = 2, preset='default', graph_compression = False, k = 2, compression_method='spectral_k'):
+    def __init__(self,seed = None, include_agent_action = False,allow_comm = True,act_and_comm = True,tool_per_agent = 2, preset='default', graph_compression = False, k = 2, compression_method='balanced_bfs', include_visited_nodes = False, enum_actions = False):
         self.seed = seed
 
         self.preset = preset
@@ -42,6 +42,9 @@ class DragonTextEnv():
         self.round = 1
         self.graph_compression = graph_compression
         self.compression_method = compression_method
+        self.visited_nodes = {}
+        self.include_visited_nodes = include_visited_nodes
+        self.enum_actions = enum_actions
 
         self.env = MiniDragonEnv(mission_length = 999,
                         recon_phase_length=0,
@@ -55,6 +58,7 @@ class DragonTextEnv():
 
         if self.graph_compression:
             self.compressed_graph = CompressedGraph(self.env.graph, method=self.compression_method, k=k, entry_policy="random", seed=self.seed)
+            self.nodes_per_region_str = self.compressed_graph.nodes_per_region_str()
             
 
         if self.tool_per_agent == 2:
@@ -85,6 +89,13 @@ class DragonTextEnv():
 
         Action = self.env.action_enum
         agent = self.env.agents[agent_id]
+        current_node = int(agent.node.id)
+        if agent_id not in self.visited_nodes:
+            self.visited_nodes[agent_id] = []
+
+        if current_node not in self.visited_nodes[agent_id]:
+            self.visited_nodes[agent_id].append(current_node)
+        
         if action is None:
             obs_text = "Invalid action."
             valid_action = False
@@ -188,6 +199,12 @@ class DragonTextEnv():
             current_region = self.compressed_graph.region_of(agent.node.id)
             text += f"You are in region {current_region}. Your current map view is:  \n" + self.compressed_graph.region_adjlist_str(current_region) + '  \n'
         text += 'Communication is available this round. ' if not self.cutoff_activated else 'Communication is not available this round.'
+        if self.include_visited_nodes:
+            text += f"  \n* {agent_id} (YOU) visited nodes: {self.visited_nodes[agent_id]}  \n"
+            for agent in self.env.agents.values():
+                if agent.id != agent_id:
+                    text += f"  \n* {agent.id} visited nodes: {self.visited_nodes[agent.id]}"
+            text += '  \n'
         # text += 'Teammate Locations: ' + team_location_text + ' '
 
 
@@ -226,6 +243,13 @@ class DragonTextEnv():
 
         Action = self.env.action_enum
         agent = self.env.agents[agent_id]
+        current_node = int(agent.node.id)
+        if agent_id not in self.visited_nodes:
+            self.visited_nodes[agent_id] = []
+
+        if current_node not in self.visited_nodes[agent_id]:
+            self.visited_nodes[agent_id].append(current_node)
+
         if action is None:
             obs_text = "Invalid action."
         elif action == Action.inspect_bomb:
@@ -308,6 +332,12 @@ class DragonTextEnv():
             current_region = self.compressed_graph.region_of(agent.node.id)
             text += f"You are in region {current_region}. Your current map view is:  \n" + self.compressed_graph.region_adjlist_str(current_region) + '  \n'
         text += 'Communication is available this round. ' if not self.cutoff_activated else 'Communication is not available this round.'
+        if self.include_visited_nodes:
+            text += f"  \n* {agent_id} (YOU) visited nodes:  {self.visited_nodes[agent_id]}  \n"
+            for agent in self.env.agents.values():
+                if agent.id != agent_id:
+                    text += f"  \n* {agent.id} visited nodes: {self.visited_nodes[agent.id]}"
+            text += '  \n'
         # text += 'Teammate Locations: ' + team_location_text + ' '
 
 
@@ -323,9 +353,9 @@ class DragonTextEnv():
                     text += 'Player {id}: "{action}". '.format(id=a, action=action.name.replace('_', ' ') if action != None else 'Invalid')
 
         if self.allow_comm:
-            text += 'Communication messages sent by your teammates: '
+            text += 'Communication messages sent by your teammates:  \n'
             for a in communications.keys():
-                text += 'Player {id}: "{comm}". '.format(id=a, comm=communications[a])
+                text += 'Player {id}: "{comm}". '.format(id=a, comm=communications[a]) + '  \n'
 
 
 
@@ -692,10 +722,10 @@ MAP_NODES_VILLAGE_ALT = "Unexplored Rooms: " + ", ".join(["0", "3", "5", "6", "8
 
 PRESET_MAPS = {
     'village': (MAP_VILLAGE, MAP_NODES_VILLAGE_ALT),
-    'default': (MAP_DEFAULT, MAP_NODES_DEFAULT),
-    'easy': (MAP_EASY, MAP_NODES_EASY),
-    'medium': (MAP_MEDIUM, MAP_NODES_MEDIUM),
-    'hard': (MAP_HARD, MAP_NODES_HARD),
+    'default': (MAP_DEFAULT, MAP_NODES_DEFAULT_ALT),
+    'easy': (MAP_EASY, MAP_NODES_EASY_ALT),
+    'medium': (MAP_MEDIUM, MAP_NODES_MEDIUM_ALT),
+    'hard': (MAP_HARD, MAP_NODES_HARD_ALT),
 }
 
 BACKGROUND_PROMPT_NEW = "Welcome to our interactive text game! In this game, you'll assume the role of a specialist on a search and rescue team. Alongside two other players, you'll navigate a five-room environment with a mission to defuse five hidden bombs. Your call sign is {agent_id}\
@@ -742,15 +772,17 @@ CUTOFF = 'Communication cutoff: no communication available this round'
 communication_cutoff_instructions = "* Continue acting based on previous information.\n\
 * When communication returns, share any information missed during the cutoff.\n\n"
 
+map_instructions = "Your starting region view, where each line is 'Room : directly connected Rooms'"
+
 BACKGROUND_PROMPT_NEW_IMPROVED = "Welcome to our interactive text game! You are a specialist on a three-person search-and-rescue team. Your call sign is {agent_id}.\n\n\
 ----------------  ROLE AND OBJECTIVE  ----------------\n\
 * Defuse all 5 hidden bombs as fast as possible.\n\
 * A team earns 10 x (number of phases) points for each bomb defused.\n\
 * Maximize the final team score.\n\n\
 ----------------  ENVIRONMENT MAP  ----------------  \n\
-The facility is a connected graph of rooms labeled with integers:\n\
+The facility is a connected graph of rooms labeled with integers.\n\
 {compression_intructions}\n\
-Your starting region view, where each line is 'Room : directly connected to Rooms'  \n\
+{map_instructions}\n\
 {map}  \n\
 You may move only to rooms listed as directly connected to your current location.\n\n\
 ----------------  BOMB TYPES  ----------------\n\
@@ -798,7 +830,6 @@ bravo   - Room {initial_node}  \n\
 charlie - Room {initial_node}  \n\
 \n\
 ----------------  MAP (adjacency list)  ----------------  \n\
-{compression_intructions}  \n\
 Each line shows 'Room : directly connected rooms'  \n\
 {map}\n\
 \n\
@@ -842,7 +873,7 @@ TIPS = "GENERAL COORDINATION AND MEMORY TIPS:  \n\
 
 
 class ChatAgent():
-    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False, improved = False, tips = False, preset='default', graph_compression=False, initial_view=None, initial_region='A'):
+    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False, improved = False, tips = False, preset='default', graph_compression=False, initial_view=None, initial_region='A', nodes_per_region_str=None):
         self.agent_id = agent_id
         self.model = model
         self.temperature=temperature
@@ -859,8 +890,12 @@ class ChatAgent():
         self.graph_compression = graph_compression
         if graph_compression == True:
             self.view = initial_view
+            self.map = nodes_per_region_str
+            global map_instructions
+            map_instructions = "This is an overview of the nodes in each region, where each line is 'Region : Contained Rooms'  \n"
         else:
             self.view = PRESET_MAPS[preset][0]
+            self.map = self.view
 
         self.belief = belief
         # self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
@@ -886,7 +921,7 @@ class ChatAgent():
             if self.tips:
                 BACKGROUND_PROMPT += '\n\n' + TIPS
             if self.improved:
-                self.last_belief = INITIAL_BELIEF_IMPROVED.format(agent_id=agent_id, initial_bomb=initial_bomb,initial_node=initial_node,map=self.view,map_nodes=PRESET_MAPS[preset][1], communication_cutoff_instructions=communication_cutoff_instructions,compression_intructions=compression_instructions)
+                self.last_belief = INITIAL_BELIEF_IMPROVED.format(agent_id=agent_id, initial_bomb=initial_bomb,initial_node=initial_node,map=self.view,map_nodes=PRESET_MAPS[preset][1], communication_cutoff_instructions=communication_cutoff_instructions)
             else:
                 self.last_belief = INITIAL_BELIEF.format(agent_id = agent_id,initial_bomb = initial_bomb,initial_node=initial_node)
         else:
@@ -896,7 +931,7 @@ class ChatAgent():
         if message_history is None:
             self.message_history = [
                 {"role": "system", "content": 'You are playing a text game with the user.'},
-                {"role": "user", "content": BACKGROUND_PROMPT.format(agent_id = agent_id, map=self.view, compression_intructions=compression_instructions, communication_cutoff_instructions=communication_cutoff_instructions)},
+                {"role": "user", "content": BACKGROUND_PROMPT.format(agent_id = agent_id, map=self.map, compression_intructions=compression_instructions, communication_cutoff_instructions=communication_cutoff_instructions, map_instructions=map_instructions)},
                 # {"role": "user", "content": INSTRUCT_PROMPT},
             ]
             if self.belief:
