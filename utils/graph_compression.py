@@ -230,6 +230,24 @@ class CompressedGraph:
     # 4. helpers
     def all_region_labels(self) -> List[str]:
         return list(self.views.keys())
+    
+    def nodes_per_region(self) -> Dict[str, List[Hashable]]:
+        """
+        Return a dict mapping region labels to lists of node IDs in each region.
+        """
+        return {lbl: list(reg) for lbl, reg in zip(self._labels, self.regions) if lbl in self.views}
+    
+    def nodes_per_region_str(self) -> str:
+        """
+        Return a string listing nodes per region, e.g.:
+        Region A : nodeA1 nodeA2 ...
+        """
+        lines = []
+        for lbl in self.all_region_labels():
+            nodes = sorted(self._region_nodes(lbl))
+            node_str = " ".join(map(str, nodes))
+            lines.append(f"Nodes in region {lbl} : {node_str}")
+        return "  \n".join(lines)
 
     def neighbors(self, x) -> List[Hashable]:
         """
