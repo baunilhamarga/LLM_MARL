@@ -27,6 +27,7 @@ PRESETS = {
     'easy': {0: (28, 56), 8: (22, 63), 6: (33, 64)},
     'medium': {23: (37, 78), 34: (20, 80), 38: (21, 69), 41: (23, 76), 47: (29, 76), 53: (32, 69), 57: (31, 82), 73: (34, 75)},
     'hard': {0: (28, 56), 3: (15, 55), 5: (40, 56), 6: (33, 64), 8: (22, 63), 14: (15, 67), 20: (42, 60), 23: (37, 78), 31: (14, 80), 34: (20, 80), 38: (21, 69), 41: (23, 76), 47: (29, 76), 53: (32, 69), 57: (31, 82), 73: (34, 75)},
+    'extreme': {0: (28, 56), 3: (15, 55), 5: (40, 56), 6: (33, 64), 8: (22, 63), 14: (15, 67), 20: (42, 60), 23: (37, 78), 24: (40, 74), 26: (46, 65), 27: (48, 60), 28: (11, 69), 31: (14, 80), 32: (46, 75), 33: (6, 69), 34: (20, 80), 36: (48, 70), 38: (21, 69), 40: (6, 76), 41: (23, 76), 43: (46, 80), 45: (28, 88), 46: (43, 91), 47: (29, 76), 48: (15, 92), 49: (9, 87), 51: (47, 85), 52: (4, 82), 53: (32, 69), 55: (34, 92), 57: (31, 82), 73: (34, 75)},
 }
 class DragonTextEnv():
     def __init__(self,seed = None, include_agent_action = False,allow_comm = True,act_and_comm = True,tool_per_agent = 2, preset='default', graph_compression = False, k = 2, compression_method='balanced_bfs', include_visited_nodes = False, enum_actions = False):
@@ -605,6 +606,41 @@ MAP_NODES_HARD = "0 : Unexplored  \n\
 57 : Unexplored  \n\
 73 : Unexplored  \n"
 
+MAP_EXTREME = "0 : 3 5 6 8  \n\
+3 : 0 8 14  \n\
+5 : 0 6 27  \n\
+6 : 0 5 8 20 23 24  \n\
+8 : 0 3 6 14  \n\
+14 : 3 8 28 31 34  \n\
+20 : 6 24 26 27  \n\
+23 : 6 24 45 47 73  \n\
+24 : 6 20 23 26 32 46  \n\
+26 : 20 24 32 36  \n\
+27 : 5 20  \n\
+28 : 14 33  \n\
+31 : 14 34 40 48 49  \n\
+32 : 24 26 43  \n\
+33 : 28  \n\
+34 : 14 31 38 41 57  \n\
+36 : 26  \n\
+38 : 34 53  \n\
+40 : 31 52  \n\
+41 : 34 47  \n\
+43 : 32 51  \n\
+45 : 23 48 55  \n\
+46 : 24  \n\
+47 : 23 41 57 73  \n\
+48 : 31 45 49  \n\
+49 : 31 48  \n\
+51 : 43  \n\
+52 : 40  \n\
+53 : 38 73  \n\
+55 : 45  \n\
+57 : 34 47  \n\
+73 : 23 47 53  \n"
+
+MAP_EXTREME_NL = "Imagine a network of rooms represented by a connected graph where each node corresponds to a room, and the edges between nodes depict hallways. The rooms are numbered 0, 3, 5, 6, 8, 14, 20, 23, 24, 26, 27, 28, 31, 32, 33, 34, 36, 38, 40, 41, 43, 45, 46, 47, 48, 49, 51, 52, 53, 55, 57, and 73. Room 0 connects to rooms 3, 5, 6, and 8. Room 3 links with rooms 8 and 14. Room 5 opens into rooms 6 and 27. Room 6 is joined to rooms 8, 20, 23, and 24. Room 8 leads to room 14. Room 14 branches into rooms 28, 31, and 34. Room 20 shares passages with rooms 24, 26, and 27. Room 23 extends to rooms 24, 45, 47, and 73. Room 24 reaches rooms 26, 32, and 46. Room 26 is connected with room 36 and room 32. Room 28 leads to room 33. Room 31 opens into rooms 34, 40, 48, and 49. Room 32 links with room 43. Room 34 extends toward rooms 38, 41, and 57. Room 38 connects to room 53. Room 40 shares a hallway with room 52. Room 41 is joined to room 47. Room 43 reaches room 51. Room 45 links with rooms 48 and 55. Room 47 is also connected to room 57 and room 73. Room 48 opens into room 49. Room 53 leads to room 73. You can only travel to adjacent, directly connected rooms at each turn."
+
 MAP_VILLAGE = "0 : 3 5 6 8  \n\
 3 : 0 8 14 15 17 21  \n\
 5 : 0 6 12 16 22 27  \n\
@@ -715,16 +751,17 @@ MAP_NODES_VILLAGE = "0 : Unexplored  \n\
 75 : Unexplored  \n\
 77 : Unexplored  \n"
 
-MAP_NODES_DEFAULT_ALT = "Unexplored Rooms: " + ", ".join(["0", "3", "5", "6", "8"]) + "(remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
+MAP_NODES_DEFAULT_ALT = "Unexplored Rooms: " + ", ".join([str(node) for node in PRESETS["default"].keys()]) + " (remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
 
-MAP_NODES_EASY_ALT = "Unexplored Rooms: " + ", ".join(["0", "6", "8"]) + "(remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
+MAP_NODES_EASY_ALT = "Unexplored Rooms: " + ", ".join([str(node) for node in PRESETS["easy"].keys()]) + " (remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
 
-MAP_NODES_MEDIUM_ALT = "Unexplored Rooms: " + ", ".join(["23", "34", "38", "41", "47", "53", "57", "73"]) + "(remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
+MAP_NODES_MEDIUM_ALT = "Unexplored Rooms: " + ", ".join([str(node) for node in PRESETS["medium"].keys()]) + " (remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
 
-MAP_NODES_HARD_ALT = "Unexplored Rooms: " + ", ".join(["0", "3", "5", "6", "8", "14", "20", "23", "31", "34", "38", "41", "47", "53", "57", "73"]) + "(remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
+MAP_NODES_HARD_ALT = "Unexplored Rooms: " + ", ".join([str(node) for node in PRESETS["hard"].keys()]) + " (remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
 
-MAP_NODES_VILLAGE_ALT = "Unexplored Rooms: " + ", ".join(["0", "3", "5", "6", "8", "11", "12", "14", "15", "16", "17", "20", "21", "22", "23", "24", "26", "27", "28", "31", "32", "33", "34", "36", "38", "40", "41", "43", "45", "46", "47", "48", "49", "51", "52", "53", "55", "56", "57", "58", "63", "64", "65", "66", "67", "68", "69", "70", "71", "72", "73", "75", "77"
-]) + "(remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
+MAP_NODES_EXTREME_ALT = "Unexplored Rooms: " + ", ".join([str(node) for node in PRESETS["extreme"].keys()]) + " (remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
+
+MAP_NODES_VILLAGE_ALT = "Unexplored Rooms: " + ", ".join([str(node) for node in PRESETS["village"].keys()]) + " (remove as exploration progresses)" + "  \n" + "Explored rooms: ... (add as exploration progresses)  \n"
 
 
 
@@ -734,6 +771,7 @@ PRESET_MAPS = {
     'easy': (MAP_EASY, MAP_NODES_EASY_ALT),
     'medium': (MAP_MEDIUM, MAP_NODES_MEDIUM_ALT),
     'hard': (MAP_HARD, MAP_NODES_HARD_ALT),
+    'extreme': (MAP_EXTREME, MAP_NODES_EXTREME_ALT)
 }
 
 BACKGROUND_PROMPT_NEW = "Welcome to our interactive text game! In this game, you'll assume the role of a specialist on a search and rescue team. Alongside two other players, you'll navigate a five-room environment with a mission to defuse five hidden bombs. Your call sign is {agent_id}\
