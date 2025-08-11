@@ -533,6 +533,8 @@ MAP_DEFAULT = "0 : 3 5 6 8  \n\
 6 : 0 5 8  \n\
 8 : 0 3 6  \n"
 
+MAP_DEFAULT_NL = "Imagine a network of rooms represented by a connected graph where each node corresponds to a room, and the edges between nodes depict hallways. The rooms are numbered 0, 3, 6, 5, and 8. Room 0 is connected to all other rooms. Room 5 shares a hallway with room 6. Room 3 is linked to room 8. And room 8 is also connected with room 6. You can only travel to adjacent, directly connected rooms at each turn." 
+
 MAP_NODES_DEFAULT = "0 : Unexplored  \n\
 3 : Unexplored  \n\
 5 : Unexplored  \n\
@@ -555,6 +557,8 @@ MAP_MEDIUM = "23 : 47 73  \n\
 53 : 38 73  \n\
 57 : 34 47  \n\
 73 : 23 47 53 \n"
+
+MAP_MEDIUM_NL = "Imagine a network of rooms represented by a connected graph where each node corresponds to a room, and the edges between nodes depict hallways. The rooms are numbered 23, 34, 38, 41, 47, 53, 57, and 73. Room 23 is linked to rooms 47 and 73. Room 34 connects to rooms 38, 41, and 57. Room 38 shares a passage with room 53. Room 41 is joined to room 47. Room 47 is also linked to room 57 and room 73. Room 53 opens into room 73. You can only travel to adjacent, directly connected rooms at each turn."
 
 MAP_NODES_MEDIUM = "23 : Unexplored  \n\
 34 : Unexplored  \n\
@@ -581,6 +585,8 @@ MAP_HARD = "0 : 3 5 6 8  \n\
 53 : 38 73  \n\
 57 : 34 47  \n\
 73 : 23 47 53  \n"
+
+MAP_HARD_NL = "Imagine a network of rooms represented by a connected graph where each node corresponds to a room, and the edges between nodes depict hallways. The rooms are numbered 0, 3, 5, 6, 8, 14, 20, 23, 31, 34, 38, 41, 47, 53, 57, and 73. Room 0 connects to rooms 3, 5, 6, and 8. Room 3 links to rooms 8 and 14. Room 5 is joined with room 6. Room 6 opens into rooms 20 and 23, and also to room 8. Room 8 is linked with room 14. Room 14 connects further to rooms 31 and 34. Room 23 shares an entry with rooms 47 and 73. Room 31 has a route to room 34. Room 34 extends to rooms 38, 41, and 57. Room 38 leads into room 53. Room 41 links to room 47. Room 47 connects to room 57 and room 73. Room 53 opens into room 73. You can only travel to adjacent, directly connected rooms at each turn."
 
 MAP_NODES_HARD = "0 : Unexplored  \n\
 3 : Unexplored  \n\
@@ -652,6 +658,8 @@ MAP_VILLAGE = "0 : 3 5 6 8  \n\
 73 : 23 47 53  \n\
 75 : 68  \n\
 77 : 68  \n"
+
+MAP_VILLAGE_NL = "Imagine a network of rooms represented by a connected graph where each node corresponds to a room, and the edges between nodes depict hallways. The rooms range from 0 to 77. Room 0 is linked to rooms 3, 5, 6, and 8. Room 3 leads to rooms 8, 14, 15, 17, and 21. Room 5 opens into rooms 6, 12, 16, 22, and 27. Room 6 shares passages with rooms 8, 11, 20, 23, and 24. Room 8 connects to room 14. Room 14 branches into rooms 17, 28, 31, and 34. Room 17 joins to rooms 21 and 40. Room 20 links with rooms 24, 26, and 27. Room 23 reaches rooms 24, 45, 47, and 73. Room 24 is tied to rooms 26, 32, and 46. Room 26 extends to room 36 and room 32. Room 28 joins to room 33. Room 31 opens into rooms 34, 40, 48, and 49. Room 32 leads to room 43. Room 34 connects with rooms 38, 41, and 57. Room 38 links to room 53. Room 40 is connected to room 52. Room 41 reaches room 47. Room 43 leads into room 51. Room 45 extends to rooms 48, 55, and 65. Room 46 connects to rooms 58, 67, 70, and 72. Room 47 opens into rooms 57 and 73. Room 48 leads to rooms 49, 66, 68, and 69. Room 49 shares an entry with room 56. Room 51 opens into rooms 63 and 64. Room 53 joins to room 73. Room 65 connects with room 71. Room 68 extends to rooms 75 and 77. You can only travel to adjacent, directly connected rooms at each turn."
 
 MAP_NODES_VILLAGE = "0 : Unexplored  \n\
 3 : Unexplored  \n\
