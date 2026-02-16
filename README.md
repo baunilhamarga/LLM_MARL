@@ -1,10 +1,16 @@
 # Theory of Mind for Multi-Agent Collaboration via Large Language Models
 
-This repository contains reference implementation for multi-LLM ToM paper (accepted to EMNLP 2023), **Theory of Mind for Multi-Agent Collaboration via Large Language Models**, available at [https://aclanthology.org/2023.emnlp-main.13/](https://aclanthology.org/2023.emnlp-main.13/)
+This repository is an extension of the original multi-LLM ToM implementation from the EMNLP 2023 paper, **Theory of Mind for Multi-Agent Collaboration via Large Language Models**, available at [https://aclanthology.org/2023.emnlp-main.13/](https://aclanthology.org/2023.emnlp-main.13/).
+
+Compared with the original project, this extension:
+- Corrects bugs from the earlier codebase.
+- Expands the framework with communication cutoff experiments.
+- Improves scalability across different map sizes.
+- Adds/extends visualization support for analysis and debugging.
 
 ## Cite
 
-If you use this code in your work, please cite the following:
+If you use this code in your work, please cite the original work:
 
 ```
 @inproceedings{li2023theory,
@@ -42,7 +48,15 @@ echo $OPENAI_API_KEY
 ```
 ## Running
 
-Once everything is installed, we can run the using these example commands
+Once everything is installed, the recommended way to run experiments is with `run.sh`.
+
+```bash
+bash run.sh
+```
+
+All experiment parameters and flags are defined in `run.sh` (including defaults and optional flags). Edit that file to configure your runs.
+
+You can also run directly with `python dragonExp.py` using commands like the examples below.
 
 ### Urban Search and Rescue (i.e. gym_dragon)
 - GPT-4-turbo on mini_dragon with 5 nodes
@@ -60,8 +74,12 @@ python dragonExp.py --model gpt-4-turbo-preview --exp_name gpt-4 --allow_comm --
 
 ## Contributors
 
+Original repository:
 - Huao Li ([@romanlee6](https://github.com/romanlee6))
 - Ini Oguntola ([@ini](https://github.com/ini))
+
+This extension:
+- Margarete Baunilha ([@baunilhamarga](https://github.com/baunilhamarga))
 
 ## License
 
