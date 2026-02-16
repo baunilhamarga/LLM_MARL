@@ -22,7 +22,9 @@ python dragonExp.py \
 #    --max_step 30 \
 #    --exp_name default_exp \
 #    --cutoff 0.0 \
-#    --memory_size 2
+#    --memory_size 2 \
+#    --preset default \
+#    --k 2
 # Optional flags (default: off, add to enable):
 #   --tom
 #   --belief
@@ -31,3 +33,5 @@ python dragonExp.py \
 #   --tom_reasoning
 #   --improved
 #   --tips
+#   --graph_compression
+#   --include_visited_nodes
