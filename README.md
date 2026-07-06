@@ -52,18 +52,16 @@ cd gym-dragon
 pip install -e .
 ```
 
-Next, we need to install dependencies for LLM agents including openai API package. For doing that run:
+Next, install the dependencies for the LLM agents:
 
 ```
 pip install -r requirements.txt
 ```
 
-Finally, we need to set up the openai API key in your system environment variables as instructed in this [guideline](https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety).
-```
-echo "export OPENAI_API_KEY='yourkey'" >> ~/.bash_profile
-source ~/.bash_profile
-echo $OPENAI_API_KEY
-```
+Finally, configure the environment variable for your inference provider. Use
+`OPENAI_API_KEY` for OpenAI or `GROQ_API_KEY` for Groq. Never commit API keys to
+the repository; see OpenAI's [API key safety guidance](https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety).
+
 ## Running
 
 Once everything is installed, the recommended way to run experiments is with `run.sh`.
@@ -75,6 +73,52 @@ bash run.sh
 All experiment parameters and flags are defined in `run.sh` (including defaults and optional flags). Edit that file to configure your runs.
 
 You can also run directly with `python dragonExp.py` using commands like the examples below.
+
+### Model providers
+
+OpenAI remains the default provider, so existing commands continue to work. It
+can also be selected explicitly:
+
+```bash
+python dragonExp.py \
+  --provider openai \
+  --model gpt-4.1-nano-2025-04-14 \
+  --exp_name openai-smoke \
+  --preset default \
+  --max_step 3
+```
+
+Groq uses its OpenAI-compatible Chat Completions endpoint:
+
+```bash
+python dragonExp.py \
+  --provider groq \
+  --model llama-3.1-8b-instant \
+  --exp_name groq-smoke \
+  --preset default \
+  --allow_comm \
+  --max_step 3
+```
+
+Any OpenAI-compatible server can be selected with an explicit base URL:
+
+```bash
+python dragonExp.py \
+  --provider openai-compatible \
+  --base_url http://localhost:8000/v1 \
+  --model your-served-model \
+  --exp_name local-smoke \
+  --preset default \
+  --max_step 3
+```
+
+Provider usage fields are normalized and accumulated in `results.json` while
+retaining the top-level `prompt_tokens` and `completion_tokens` fields used by
+the dashboard. Each `chat_log.jsonl` request also records latency, available
+usage fields, request identifiers, and backend fingerprints. Missing usage
+metadata is recorded but does not stop an experiment. `runtime_metrics` in
+`results.json` captures wall time, process CPU time, peak memory, and basic host
+information for cross-backend comparisons.
 
 ### Urban Search and Rescue (i.e. gym_dragon)
 - GPT-4-turbo on mini_dragon with 5 nodes

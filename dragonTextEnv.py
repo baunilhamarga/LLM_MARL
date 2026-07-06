@@ -3,24 +3,21 @@ import pandas as pd
 from gym_dragon.envs import MiniDragonEnv
 from gym_dragon.core import Region, Agent, Tool, Bomb
 from gym_dragon.wrappers import MiniObs
-import openai
 import time
 import json
 import os
 import re
-from collections.abc import Mapping
-from numbers import Number
 from tenacity import (
     retry,
     stop_after_attempt,
     wait_random_exponential,
 )  # for exponential backoff
 from utils.graph_compression import CompressedGraph
+from utils.model_provider import ChatModelClient, flatten_numeric
 
 COLOR_TO_STR={0: 'Red',1:'Green',2:'Blue'}
 # ACTION_TO_STR={1: 'inspect_bomb',7:'go_to_node_0',8:'go_to_node_3',9:'go_to_node_5',10:'go_to_node_6',11:'go_to_node_8'}
 BOMBSTATE_TO_STR = {0: 'inactive',1: 'active',2: 'exploded',3: 'defused'}
-openai.api_key = os.environ.get("OPENAI_API_KEY", "na")
 PRESETS = {
     'village': {0: (28, 56), 3: (15, 55), 5: (40, 56), 6: (33, 64), 8: (22, 63), 11: (32, 56), 12: (41, 52), 14: (15, 67), 15: (21, 55), 16: (45, 52), 17: (5, 62), 20: (42, 60), 21: (6, 56), 22: (48, 52), 23: (37, 78), 24: (40, 74), 26: (46, 65), 27: (48, 60), 28: (11, 69), 31: (14, 80), 32: (46, 75), 33: (6, 69), 34: (20, 80), 36: (48, 70), 38: (21, 69), 40: (6, 76), 41: (23, 76), 43: (46, 80), 45: (28, 88), 46: (43, 91), 47: (29, 76), 48: (15, 92), 49: (9, 87), 51: (47, 85), 52: (4, 82), 53: (32, 69), 55: (34, 92), 56: (9, 82), 57: (31, 82), 58: (39, 89), 63: (46, 90), 64: (48, 90), 65: (27, 96), 66: (20, 96), 67: (44, 98), 68: (5, 95), 69: (11, 98), 70: (39, 98), 71: (34, 98), 72: (48, 98), 73: (34, 75), 75: (6, 98), 77: (6, 90)},
     'default': {0: (28, 56), 3: (15, 55), 5: (40, 56), 6: (33, 64), 8: (22, 63)},
@@ -485,7 +482,16 @@ class DragonTextEnv():
             saved_file = saved_files[agent_id]
             with open(saved_file, 'r', encoding='utf-8') as f:
                 file = json.load(f)
-            chat_agents[agent_id] = ChatAgent(agent_id=file['agent_id'],model=file['model'],temperature=file['temperature'],message_history=file['message_history'],belief=True,allow_comm=True)
+            chat_agents[agent_id] = ChatAgent(
+                agent_id=file['agent_id'],
+                model=file['model'],
+                provider=file.get('provider', 'openai'),
+                base_url=file.get('base_url'),
+                temperature=file['temperature'],
+                message_history=file['message_history'],
+                belief=True,
+                allow_comm=True,
+            )
 
             initial_actions[agent_id],communications[agent_id] = self.decode_action(file['message_history'][-2]['content'], agent_id=agent_id)
 
@@ -922,12 +928,30 @@ TIPS = "GENERAL COORDINATION AND MEMORY TIPS:  \n\
 
 
 class ChatAgent():
-    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False, improved = False, tips = False, preset='default', graph_compression=False, initial_view=None, initial_region='A', nodes_per_region_str=None):
+    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False, improved = False, tips = False, preset='default', graph_compression=False, initial_view=None, initial_region='A', nodes_per_region_str=None, provider='openai', base_url=None, api_key_env=None, model_client=None):
         self.agent_id = agent_id
         self.model = model
+        self.provider = provider
+        self.base_url = base_url
+        self.api_key_env = api_key_env
+        self.model_client = model_client or ChatModelClient(
+            provider=provider,
+            base_url=base_url,
+            api_key_env=api_key_env,
+        )
         self.temperature=temperature
         self.model_supports_temperature = {}
         self.total_usage = {}
+        self.model_metrics = {
+            'request_count': 0,
+            'successful_requests': 0,
+            'failed_requests': 0,
+            'responses_with_usage': 0,
+            'responses_without_usage': 0,
+            'usage_collection_errors': 0,
+            'wall_time_seconds': 0.0,
+        }
+        self.last_request_metrics = {}
         self.log_chat=log_chat
         self.log_path = log_path
         self.memory_size = memory_size
@@ -990,38 +1014,49 @@ class ChatAgent():
 
     @staticmethod
     def _usage_to_dict(usage_obj) -> dict:
-        """
-        Convert the `CompletionUsage` object into a flat dict that contains
-        only entries whose numeric value > 0.
-
-        Nested `*_tokens_details` blocks are flattened with a dotted name:
-            prompt_tokens_details.cached_tokens  → 0   (filtered out)
-            completion_tokens_details.audio_tokens → 7 → kept as
-                'completion_tokens_details.audio_tokens': 7
-        """
-        # 1) turn the Pydantic model (or any object) into a python dict
-        if hasattr(usage_obj, "model_dump"):       # pydantic v2 (OpenAI ≥ 1.0.0)
-            raw = usage_obj.model_dump(exclude_none=True)
-        elif hasattr(usage_obj, "dict"):           # pydantic v1 fallback
-            raw = usage_obj.dict(exclude_none=True)
-        else:                                      # plain object → __dict__
-            raw = vars(usage_obj)
-
-        # 2) recursively flatten & filter
-        def flatten(d: Mapping, prefix: str = ""):
-            for k, v in d.items():
-                name = f"{prefix}.{k}" if prefix else k
-                if isinstance(v, Mapping):
-                    yield from flatten(v, name)
-                elif isinstance(v, Number) and v > 0:
-                    yield name, v
-
-        return dict(flatten(raw))
+        """Normalize OpenAI-compatible usage objects without SDK assumptions."""
+        return flatten_numeric(usage_obj)
     
     def _bump_usage(self, usage_obj) -> None:
         """Accumulate the latest call’s `usage` into `self.total_usage`."""
         for key, value in self._usage_to_dict(usage_obj).items():
-                self.total_usage[key] = self.total_usage.get(key, 0) + value
+            self.total_usage[key] = self.total_usage.get(key, 0) + value
+
+    def _request_model(self, temperature):
+        started = time.perf_counter()
+        self.model_metrics['request_count'] += 1
+        try:
+            result = self.model_client.complete(
+                model=self.model,
+                messages=self.message_history,
+                temperature=temperature,
+            )
+        except Exception:
+            self.model_metrics['failed_requests'] += 1
+            self.model_metrics['wall_time_seconds'] += time.perf_counter() - started
+            raise
+
+        latency = time.perf_counter() - started
+        self.model_metrics['successful_requests'] += 1
+        self.model_metrics['wall_time_seconds'] += latency
+        usage_key = 'responses_with_usage' if result.usage_available else 'responses_without_usage'
+        self.model_metrics[usage_key] += 1
+
+        try:
+            self._bump_usage(result.usage)
+        except Exception as error:
+            self.model_metrics['usage_collection_errors'] += 1
+            print(f"Usage collection failed without stopping the experiment: {error}")
+
+        self.last_request_metrics = {
+            'provider': self.provider,
+            'model': self.model,
+            'latency_seconds': latency,
+            'usage_available': result.usage_available,
+            'usage': result.usage,
+            'response_metadata': result.metadata,
+        }
+        return result
 
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
     def makeAPIcall(self):
@@ -1030,24 +1065,14 @@ class ChatAgent():
 
         try:
             if supports_temp:
-                response = openai.chat.completions.create(
-                    model=self.model,
-                    messages=self.message_history,
-                    temperature=self.temperature,
-                )
+                result = self._request_model(self.temperature)
             else:
-                response = openai.chat.completions.create(
-                    model=self.model,
-                    messages=self.message_history,
-                )
-        except openai.BadRequestError as e:
-            if "Unsupported" in str(e):
+                result = self._request_model(None)
+        except Exception as e:
+            if supports_temp and self.model_client.rejects_temperature(e):
                 self.model_supports_temperature[self.model] = False
                 # Retry without temperature
-                response = openai.chat.completions.create(
-                    model=self.model,
-                    messages=self.message_history,
-                )
+                result = self._request_model(None)
             else:
                 raise
         
@@ -1057,7 +1082,8 @@ class ChatAgent():
                 'agent': self.agent_id,
                 'round': self.round,
                 'prompt': self.message_history if self.message_history else "",
-                'response': response.choices[0].message.content
+                'response': result.content,
+                'request_metrics': self.last_request_metrics,
             }
             try:
                 if os.path.exists(self.log_path):
@@ -1068,11 +1094,16 @@ class ChatAgent():
                         log_file.write(json.dumps(log_entry) + "\n")
             except Exception as e:
                 print(f"Logging failed: {e}")
-            try:
-                self._bump_usage(response.usage)
-            except Exception as e:
-                print(f"Usage bumping failed: {e}")
-        return response.choices[0].message.content
+        return result.content
+
+    def metrics_summary(self):
+        """Return JSON-safe aggregate metrics for this agent's model calls."""
+        return {
+            'provider': self.provider,
+            'model': self.model,
+            **self.model_metrics,
+            'usage': dict(self.total_usage),
+        }
 
     def update_history(self,text):
 
@@ -1126,6 +1157,8 @@ class ChatAgent():
         data = {}
         data['agent_id'] = self.agent_id
         data['model'] = self.model
+        data['provider'] = self.provider
+        data['base_url'] = self.base_url
         data['temperature'] = self.temperature
         data['message_history'] = self.message_history
         data['belief'] = self.belief

@@ -1,6 +1,7 @@
 # Models: o4-mini-2025-04-16, gpt-4.1-nano-2025-04-14, o3-mini-2025-01-31, gpt-3.5-turbo-0125, gpt-4o-2024-08-06, gpt-4-0613 (expensive)
 
 python dragonExp.py \
+    --provider openai \
     --model o4-mini-2025-04-16 \
     --exp_name o4-mini-2025-04-16 \
     --allow_comm \
@@ -16,6 +17,7 @@ python dragonExp.py \
 # Default arguments
 #    --save_path data/ \
 #    --seed 0 \
+#    --provider openai \
 #    --model gpt-4-turbo-preview \
 #    --tool_per_agent 2 \
 #    --temperature 0 \

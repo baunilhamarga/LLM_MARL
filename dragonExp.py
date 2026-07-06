@@ -4,8 +4,13 @@ import os
 from dragonTextEnv import DragonTextEnv, ChatAgent, PRESETS
 import numpy as np
 import time
+import platform
+import resource
+import socket
+import sys
 from pathlib import Path
 import utils.utils as utils
+from utils.model_provider import ChatModelClient
 
 
 parser = argparse.ArgumentParser(description='Text interface for LLM agent')
@@ -23,6 +28,12 @@ parser.add_argument('--allow_comm', action='store_true', default=False,
                     help='allow communication between team members')
 parser.add_argument('--model', type=str, default='gpt-4-turbo-preview',
                     help='base LM to use')
+parser.add_argument('--provider', choices=['openai', 'groq', 'openai-compatible'], default='openai',
+                    help='inference provider (default: openai)')
+parser.add_argument('--base_url', type=str, default=None,
+                    help='base URL for an OpenAI-compatible inference server')
+parser.add_argument('--api_key_env', type=str, default=None,
+                    help='environment variable containing the provider API key')
 parser.add_argument('--include_agent_action', action='store_true', default=False,
                     help='present other agents action in obs')
 # parser.add_argument('--act_and_comm', action='store_true', default=False,
@@ -36,7 +47,7 @@ parser.add_argument('--max_step', type = int, default=30,
 parser.add_argument('--exp_name', type = str, default='default_exp',
                     help='exp name to save')
 parser.add_argument('--cutoff', type = float, default=0.0,
-                    help='probability of communication cutoff every round, e.g., 0.5 means commnunication in not available 50% of the time.')
+                    help='probability of communication cutoff every round, e.g., 0.5 means communication is unavailable half of the time.')
 parser.add_argument('--memory_size', type = int, default=2,
                     help='how many previous rounds to keep in memory for each agent, e.g., 2 means the agent can access the last 2 rounds of history. -1 means no limit.')
 parser.add_argument('--tom_reasoning', action='store_true', default=False,
@@ -66,6 +77,10 @@ exp_name = args.exp_name
 
 print(args)
 
+experiment_wall_started = time.perf_counter()
+experiment_cpu_started = time.process_time()
+experiment_resource_started = resource.getrusage(resource.RUSAGE_SELF)
+
 DATA_PATH = os.path.join(args.save_path ,args.model ,args.exp_name,'seed' + str(args.seed))+'/'
 # DATA_PATH += 'GPT4-turbo-comm-seed24/'
 if not os.path.exists(DATA_PATH):
@@ -85,6 +100,14 @@ ToM = args.tom
 belief = args.belief
 allow_comm = args.allow_comm
 model_name = args.model
+provider = args.provider
+model_client = ChatModelClient(
+    provider=provider,
+    base_url=args.base_url,
+    api_key_env=args.api_key_env,
+)
+# Validate credentials and endpoint configuration before the experiment loop.
+model_client.client
 act_and_comm = True
 memory_size = args.memory_size
 cutoff = args.cutoff
@@ -113,9 +136,9 @@ else:
     initial_region = None
     initial_view = None
     nodes_per_region_str = None
-chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region, nodes_per_region_str=nodes_per_region_str),
-               'bravo':ChatAgent(agent_id='bravo',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region, nodes_per_region_str=nodes_per_region_str),
-               'charlie':ChatAgent(agent_id='charlie',model = model_name,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region, nodes_per_region_str=nodes_per_region_str)}
+chat_agents = {'alpha':ChatAgent(agent_id='alpha',model = model_name,provider=provider,base_url=args.base_url,api_key_env=args.api_key_env,model_client=model_client,temperature=args.temperature,belief = belief,allow_comm = allow_comm, initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region, nodes_per_region_str=nodes_per_region_str),
+               'bravo':ChatAgent(agent_id='bravo',model = model_name,provider=provider,base_url=args.base_url,api_key_env=args.api_key_env,model_client=model_client,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region, nodes_per_region_str=nodes_per_region_str),
+               'charlie':ChatAgent(agent_id='charlie',model = model_name,provider=provider,base_url=args.base_url,api_key_env=args.api_key_env,model_client=model_client,temperature=args.temperature,belief = belief,allow_comm = allow_comm,initial_bomb = initial_bomb, initial_node = initial_node,log_path = chat_log_path, memory_size = memory_size, cutoff=cutoff>1e-15, improved=improved, tips=tips, preset=preset, graph_compression=graph_compression, initial_view=initial_view, initial_region=initial_region, nodes_per_region_str=nodes_per_region_str)}
 initial_actions = {'alpha':Action.go_to(int(initial_node)),'bravo':Action.go_to(int(initial_node)),'charlie':Action.go_to(int(initial_node))}
 communications = {'alpha':'None','bravo':'None','charlie':'None'}
 for agent_id in chat_agents.keys():
@@ -320,15 +343,50 @@ while not done['__all__'] and round <= args.max_step:
 
     round +=1
 
-# Compute token usage
+# Aggregate token usage and provider-independent request metrics.
 total_usage = {}
+agent_model_metrics = {}
+aggregate_model_metrics = {
+    'provider': provider,
+    'model': model_name,
+    'request_count': 0,
+    'successful_requests': 0,
+    'failed_requests': 0,
+    'responses_with_usage': 0,
+    'responses_without_usage': 0,
+    'usage_collection_errors': 0,
+    'wall_time_seconds': 0.0,
+}
 for agent_id, chat_agent in chat_agents.items():
+    agent_model_metrics[agent_id] = chat_agent.metrics_summary()
     usage = chat_agent.total_usage
     for key, value in usage.items():
         total_usage[key] = total_usage.get(key, 0) + (value or 0)
+    for key in aggregate_model_metrics:
+        if key in ('provider', 'model'):
+            continue
+        aggregate_model_metrics[key] += chat_agent.model_metrics.get(key, 0)
+
+aggregate_model_metrics['usage'] = total_usage
+aggregate_model_metrics['agents'] = agent_model_metrics
+
+process_usage = resource.getrusage(resource.RUSAGE_SELF)
+runtime_metrics = {
+    'wall_time_seconds': time.perf_counter() - experiment_wall_started,
+    'process_cpu_time_seconds': time.process_time() - experiment_cpu_started,
+    'user_cpu_time_seconds': process_usage.ru_utime - experiment_resource_started.ru_utime,
+    'system_cpu_time_seconds': process_usage.ru_stime - experiment_resource_started.ru_stime,
+    'peak_rss_mb': process_usage.ru_maxrss / 1024,
+    'hostname': socket.gethostname(),
+    'logical_cpu_count': os.cpu_count(),
+    'platform': platform.platform(),
+    'python_version': sys.version.split()[0],
+}
 
 results = {'score': env.env.score, 'rounds': round - 1, 'invalid_actions': invalid_actions, 'total_actions': total_actions, 'valid_action_rate': (total_actions - invalid_actions) / total_actions if total_actions > 0 else 0}
 results.update(total_usage)
+results['model_metrics'] = aggregate_model_metrics
+results['runtime_metrics'] = runtime_metrics
 
 with open(os.path.join(DATA_PATH, 'results.json'), 'w', encoding='utf-8') as f:
     json.dump(results, f, indent=2)
