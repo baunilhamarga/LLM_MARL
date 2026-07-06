@@ -1,18 +1,36 @@
-# Theory of Mind for Multi-Agent Collaboration via Large Language Models
+# When LLM Agent Teams Fail at Topological Spatial Reasoning Under Partial Observability
 
-This repository is an extension of the original multi-LLM ToM implementation from the EMNLP 2023 paper, **Theory of Mind for Multi-Agent Collaboration via Large Language Models**, available at [https://aclanthology.org/2023.emnlp-main.13/](https://aclanthology.org/2023.emnlp-main.13/).
+This repository contains the implementation used in [**When LLM Agent Teams Fail at Topological Spatial Reasoning Under Partial Observability**](https://doi.org/10.65109/RTFT9958), published as an extended abstract in the proceedings of AAMAS 2026. The paper investigates the topological spatial-reasoning capabilities of LLM agent teams under partial observability.
 
-Compared with the original project, this extension:
+The codebase originated as a fork of Huao Li et al.'s multi-LLM Theory of Mind implementation for the EMNLP 2023 paper [Theory of Mind for Multi-Agent Collaboration via Large Language Models](https://aclanthology.org/2023.emnlp-main.13/). The current repository has since been substantially extended and is maintained as the codebase accompanying the AAMAS 2026 publication.
+
+Compared with the upstream project, this version:
+
 - Corrects bugs from the earlier codebase.
 - Expands the framework with communication cutoff experiments.
 - Improves scalability across different map sizes.
+- Adds graph-compression and topological spatial-reasoning experiments.
 - Adds/extends visualization support for analysis and debugging.
 
-## Cite
+## Citation
 
-If you use this code in your work, please cite the original work:
+If you use this repository, its experiments, or its extensions in your research, please cite the AAMAS 2026 publication:
 
+```bibtex
+@inproceedings{gama2026llm,
+  title     = {When {LLM} Agent Teams Fail at Topological Spatial Reasoning Under Partial Observability},
+  author    = {Gama, Heitor and Diguet, Jean-Philippe and Ranasinghe, Damith C.},
+  booktitle = {Proceedings of the 25th International Conference on Autonomous Agents and Multiagent Systems},
+  pages     = {3567--3569},
+  year      = {2026},
+  doi       = {10.65109/RTFT9958},
+  url       = {https://doi.org/10.65109/RTFT9958}
+}
 ```
+
+This repository builds on the original EMNLP 2023 implementation. Please also cite the upstream work when your use relies on that contribution:
+
+```bibtex
 @inproceedings{li2023theory,
   title={Theory of Mind for Multi-Agent Collaboration via Large Language Models},
   author={Li, Huao and Chong, Yu and Stepputtis, Simon and Campbell, Joseph P and Hughes, Dana and Lewis, Charles and Sycara, Katia},
@@ -78,8 +96,8 @@ Original repository:
 - Huao Li ([@romanlee6](https://github.com/romanlee6))
 - Ini Oguntola ([@ini](https://github.com/ini))
 
-This extension:
-- Margarete Baunilha ([@baunilhamarga](https://github.com/baunilhamarga))
+Current repository:
+- Heitor Gama ([@baunilhamarga](https://github.com/baunilhamarga))
 
 ## License
 
