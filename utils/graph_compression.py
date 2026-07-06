@@ -17,7 +17,6 @@ from collections import defaultdict
 from typing import Union, Callable, Optional, Hashable, Dict, List, Set, Tuple
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.cm import get_cmap
 from networkx.algorithms import community
 import collections
 

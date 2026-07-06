@@ -62,6 +62,9 @@ class DragonTextEnv():
             self.nodes_per_region_str = self.compressed_graph.nodes_per_region_str()
             
 
+        # TODO: Derive or validate the bomb count from the selected preset.
+        # The "easy" preset has only 3 valid nodes, but reset currently requests
+        # 5 unique bomb locations, causing NumPy sampling with replace=False to fail.
         if self.tool_per_agent == 2:
             self.env.reset(csv_path =None,
                            num_bombs_per_region = 5,
