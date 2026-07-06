@@ -2,6 +2,11 @@
 tmux*
 wild*
 
+# Ignore machine-specific scheduler jobs and their outputs
+jobs/
+slurm-*.out
+slurm-*.err
+
 # Ignore Weights & Biases files
 wandb/
 wandb-debug.log
@@ -10,6 +15,7 @@ wandb-settings/
 
 # Ignroe logs
 data/
+logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

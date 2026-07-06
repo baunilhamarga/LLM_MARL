@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from utils.model_provider import ChatModelClient, flatten_numeric
+from utils.model_provider import ChatModelClient, aggregate_metrics, flatten_numeric
 
 try:
     from dragonTextEnv import ChatAgent
@@ -93,6 +93,24 @@ class UsageNormalizationTests(unittest.TestCase):
         error = RuntimeError("temperature is unsupported for this model")
         self.assertTrue(ChatModelClient.rejects_temperature(error))
         self.assertFalse(ChatModelClient.rejects_temperature(RuntimeError("model not found")))
+
+    def test_resource_gauges_use_maximum_while_tokens_use_sum(self):
+        total = {}
+        aggregate_metrics(total, {"prompt_tokens": 10, "cuda_peak_memory_allocated_mb": 100})
+        aggregate_metrics(total, {"prompt_tokens": 20, "cuda_peak_memory_allocated_mb": 90})
+
+        self.assertEqual(total["prompt_tokens"], 30)
+        self.assertEqual(total["cuda_peak_memory_allocated_mb"], 100)
+
+    def test_local_provider_configuration_requires_no_api_key(self):
+        adapter = ChatModelClient(
+            provider="local",
+            model_path="meta-llama/Llama-3.1-8B-Instruct",
+            model_cache_dir="/models",
+        )
+
+        self.assertFalse(adapter.requires_api_key)
+        self.assertEqual(adapter.model_path, "meta-llama/Llama-3.1-8B-Instruct")
 
 
 @unittest.skipIf(ChatAgent is None, "project runtime dependencies are not installed")

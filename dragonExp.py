@@ -10,7 +10,7 @@ import socket
 import sys
 from pathlib import Path
 import utils.utils as utils
-from utils.model_provider import ChatModelClient
+from utils.model_provider import ChatModelClient, aggregate_metrics
 
 
 parser = argparse.ArgumentParser(description='Text interface for LLM agent')
@@ -26,14 +26,22 @@ parser.add_argument('--belief', action='store_true', default=False,
                     help='maintain a belief state about the env')
 parser.add_argument('--allow_comm', action='store_true', default=False,
                     help='allow communication between team members')
-parser.add_argument('--model', type=str, default='gpt-4-turbo-preview',
-                    help='base LM to use')
-parser.add_argument('--provider', choices=['openai', 'groq', 'openai-compatible'], default='openai',
+parser.add_argument('--model', type=str, default=None,
+                    help='base LM to use (provider-specific default when omitted)')
+parser.add_argument('--provider', choices=['openai', 'groq', 'local', 'openai-compatible'], default='openai',
                     help='inference provider (default: openai)')
 parser.add_argument('--base_url', type=str, default=None,
                     help='base URL for an OpenAI-compatible inference server')
 parser.add_argument('--api_key_env', type=str, default=None,
                     help='environment variable containing the provider API key')
+parser.add_argument('--model_path', type=str, default='meta-llama/Llama-3.1-8B-Instruct',
+                    help='Hugging Face model ID or local snapshot path for local inference')
+parser.add_argument('--model_cache_dir', type=str, default='/usr/users/xai/gama_hei/projects/llm_dce/models/huggingface',
+                    help='Hugging Face cache containing local model weights')
+parser.add_argument('--local_dtype', choices=['auto', 'float16', 'bfloat16', 'float32'], default='float16',
+                    help='weight dtype for local inference (default: float16)')
+parser.add_argument('--max_completion_tokens', type=int, default=None,
+                    help='maximum generated tokens per model call (local default: 256)')
 parser.add_argument('--include_agent_action', action='store_true', default=False,
                     help='present other agents action in obs')
 # parser.add_argument('--act_and_comm', action='store_true', default=False,
@@ -69,6 +77,8 @@ parser.add_argument('--include_visited_nodes', action='store_true', default=Fals
 
 # model
 args = parser.parse_args()
+if args.model is None:
+    args.model = 'Llama-3.1-8B-Instruct' if args.provider == 'local' else 'gpt-4-turbo-preview'
 
 exp_base   = args.exp_name
 save_root  = Path(args.save_path)          # Path object once, reuse it
@@ -105,9 +115,13 @@ model_client = ChatModelClient(
     provider=provider,
     base_url=args.base_url,
     api_key_env=args.api_key_env,
+    model_path=args.model_path if provider == 'local' else None,
+    model_cache_dir=args.model_cache_dir if provider == 'local' else None,
+    local_dtype=args.local_dtype,
+    max_completion_tokens=args.max_completion_tokens,
 )
 # Validate credentials and endpoint configuration before the experiment loop.
-model_client.client
+model_client.prepare(model_name)
 act_and_comm = True
 memory_size = args.memory_size
 cutoff = args.cutoff
@@ -360,8 +374,7 @@ aggregate_model_metrics = {
 for agent_id, chat_agent in chat_agents.items():
     agent_model_metrics[agent_id] = chat_agent.metrics_summary()
     usage = chat_agent.total_usage
-    for key, value in usage.items():
-        total_usage[key] = total_usage.get(key, 0) + (value or 0)
+    aggregate_metrics(total_usage, usage)
     for key in aggregate_model_metrics:
         if key in ('provider', 'model'):
             continue
@@ -369,6 +382,11 @@ for agent_id, chat_agent in chat_agents.items():
 
 aggregate_model_metrics['usage'] = total_usage
 aggregate_model_metrics['agents'] = agent_model_metrics
+aggregate_model_metrics['setup'] = model_client.setup_metrics
+if total_usage.get('generation_time_seconds', 0) > 0:
+    aggregate_model_metrics['completion_tokens_per_second'] = (
+        total_usage.get('completion_tokens', 0) / total_usage['generation_time_seconds']
+    )
 
 process_usage = resource.getrusage(resource.RUSAGE_SELF)
 runtime_metrics = {

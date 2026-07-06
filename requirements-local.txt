@@ -1,0 +1,6 @@
+# Install a CUDA-enabled PyTorch build separately for the compute node.
+transformers>=4.43,<5
+accelerate>=0.26
+safetensors
+huggingface_hub
+sentencepiece

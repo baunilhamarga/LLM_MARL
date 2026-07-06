@@ -13,7 +13,7 @@ from tenacity import (
     wait_random_exponential,
 )  # for exponential backoff
 from utils.graph_compression import CompressedGraph
-from utils.model_provider import ChatModelClient, flatten_numeric
+from utils.model_provider import ChatModelClient, aggregate_metrics, flatten_numeric
 
 COLOR_TO_STR={0: 'Red',1:'Green',2:'Blue'}
 # ACTION_TO_STR={1: 'inspect_bomb',7:'go_to_node_0',8:'go_to_node_3',9:'go_to_node_5',10:'go_to_node_6',11:'go_to_node_8'}
@@ -487,6 +487,10 @@ class DragonTextEnv():
                 model=file['model'],
                 provider=file.get('provider', 'openai'),
                 base_url=file.get('base_url'),
+                model_path=file.get('model_path'),
+                model_cache_dir=file.get('model_cache_dir'),
+                local_dtype=file.get('local_dtype', 'float16'),
+                max_completion_tokens=file.get('max_completion_tokens'),
                 temperature=file['temperature'],
                 message_history=file['message_history'],
                 belief=True,
@@ -928,7 +932,7 @@ TIPS = "GENERAL COORDINATION AND MEMORY TIPS:  \n\
 
 
 class ChatAgent():
-    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False, improved = False, tips = False, preset='default', graph_compression=False, initial_view=None, initial_region='A', nodes_per_region_str=None, provider='openai', base_url=None, api_key_env=None, model_client=None):
+    def __init__(self,agent_id='alpha',model="gpt-4-turbo-preview",temperature=0.0,message_history =None, belief = False, allow_comm = True,initial_bomb = 1, initial_node = 0, log_chat=True, log_path="data/chat_log.json", memory_size=2, cutoff=False, improved = False, tips = False, preset='default', graph_compression=False, initial_view=None, initial_region='A', nodes_per_region_str=None, provider='openai', base_url=None, api_key_env=None, model_path=None, model_cache_dir=None, local_dtype='float16', max_completion_tokens=None, model_client=None):
         self.agent_id = agent_id
         self.model = model
         self.provider = provider
@@ -938,7 +942,15 @@ class ChatAgent():
             provider=provider,
             base_url=base_url,
             api_key_env=api_key_env,
+            model_path=model_path,
+            model_cache_dir=model_cache_dir,
+            local_dtype=local_dtype,
+            max_completion_tokens=max_completion_tokens,
         )
+        self.model_path = self.model_client.model_path
+        self.model_cache_dir = self.model_client.model_cache_dir
+        self.local_dtype = self.model_client.local_dtype
+        self.max_completion_tokens = self.model_client.max_completion_tokens
         self.temperature=temperature
         self.model_supports_temperature = {}
         self.total_usage = {}
@@ -1019,8 +1031,7 @@ class ChatAgent():
     
     def _bump_usage(self, usage_obj) -> None:
         """Accumulate the latest call’s `usage` into `self.total_usage`."""
-        for key, value in self._usage_to_dict(usage_obj).items():
-            self.total_usage[key] = self.total_usage.get(key, 0) + value
+        aggregate_metrics(self.total_usage, self._usage_to_dict(usage_obj))
 
     def _request_model(self, temperature):
         started = time.perf_counter()
@@ -1159,6 +1170,10 @@ class ChatAgent():
         data['model'] = self.model
         data['provider'] = self.provider
         data['base_url'] = self.base_url
+        data['model_path'] = self.model_path
+        data['model_cache_dir'] = self.model_cache_dir
+        data['local_dtype'] = self.local_dtype
+        data['max_completion_tokens'] = self.max_completion_tokens
         data['temperature'] = self.temperature
         data['message_history'] = self.message_history
         data['belief'] = self.belief

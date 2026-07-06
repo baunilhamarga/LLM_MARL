@@ -100,6 +100,69 @@ python dragonExp.py \
   --max_step 3
 ```
 
+#### Local Transformers inference
+
+The `local` provider loads one Transformers model and shares it across all
+agents. No API key or inference server is required. The default local model is
+`Llama-3.1-8B-Instruct`, loaded from the existing Hugging Face cache at
+`/usr/users/xai/gama_hei/projects/llm_dce/models/huggingface`.
+
+On the GPU compute node, install the local dependencies into `tom-heavy` once:
+
+```bash
+conda activate tom-heavy
+python -m pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu126
+python -m pip install -r requirements-local.txt
+```
+
+Verify that the allocated GPU is visible:
+
+```bash
+python -c 'import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))'
+```
+
+Then run the three-round smoke experiment:
+
+```bash
+bash run_local.sh
+```
+
+The equivalent explicit command is:
+
+```bash
+python dragonExp.py \
+  --provider local \
+  --model Llama-3.1-8B-Instruct \
+  --model_path meta-llama/Llama-3.1-8B-Instruct \
+  --model_cache_dir /usr/users/xai/gama_hei/projects/llm_dce/models/huggingface \
+  --local_dtype float16 \
+  --max_completion_tokens 256 \
+  --exp_name llama-local-smoke \
+  --preset default \
+  --allow_comm \
+  --max_step 3 \
+  --temperature 0 \
+  --seed 0
+```
+
+`run_local.sh` accepts additional arguments, whose later values override its
+smoke-test defaults. For example, `bash run_local.sh --max_step 30 --seed 3`.
+
+After the interactive GPU smoke test succeeds, submit the full map suite with:
+
+```bash
+mkdir -p logs
+sbatch jobs/llama_local_all_presets.sbatch
+```
+
+The batch runs `village`, `default`, `medium`, `hard`, and `extreme`
+sequentially on one GPU for 30 rounds with communication enabled, repeating
+each preset with seeds 0, 1, and 2 (15 experiments total). `easy` is excluded
+because of its known bomb-count mismatch. Seeds, round count, output length,
+and the optional ToM measurements are configurable near the top of the batch
+file. Monitor it with `squeue -u "$USER"` and inspect
+`logs/llama31_marl_maps-<job-id>.out`.
+
 Any OpenAI-compatible server can be selected with an explicit base URL:
 
 ```bash
@@ -118,7 +181,10 @@ the dashboard. Each `chat_log.jsonl` request also records latency, available
 usage fields, request identifiers, and backend fingerprints. Missing usage
 metadata is recorded but does not stop an experiment. `runtime_metrics` in
 `results.json` captures wall time, process CPU time, peak memory, and basic host
-information for cross-backend comparisons.
+information for cross-backend comparisons. Local runs additionally record model
+load time, parameter count, PyTorch and Transformers versions, GPU identity,
+CUDA memory usage, exact tokenizer counts, generation time, and aggregate output
+tokens per second.
 
 ### Urban Search and Rescue (i.e. gym_dragon)
 - GPT-4-turbo on mini_dragon with 5 nodes
