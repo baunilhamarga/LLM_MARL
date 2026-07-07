@@ -8,6 +8,7 @@ import platform
 import resource
 import socket
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 import utils.utils as utils
 from utils.model_provider import ChatModelClient, aggregate_metrics
@@ -90,6 +91,7 @@ print(args)
 experiment_wall_started = time.perf_counter()
 experiment_cpu_started = time.process_time()
 experiment_resource_started = resource.getrusage(resource.RUSAGE_SELF)
+experiment_started_at = datetime.now(timezone.utc).isoformat()
 
 DATA_PATH = os.path.join(args.save_path ,args.model ,args.exp_name,'seed' + str(args.seed))+'/'
 # DATA_PATH += 'GPT4-turbo-comm-seed24/'
@@ -99,7 +101,9 @@ if not os.path.exists(DATA_PATH):
 chat_log_path = os.path.join(DATA_PATH, 'chat_log.jsonl')
     
 with open(os.path.join(DATA_PATH, 'args.json'), 'w', encoding='utf-8') as f:
-    json.dump(vars(args), f, indent=2)
+    args_payload = vars(args).copy()
+    args_payload['started_at'] = experiment_started_at
+    json.dump(args_payload, f, indent=2)
     
 renders_path = os.path.join(DATA_PATH, 'renders')
 if not os.path.exists(renders_path):
@@ -401,7 +405,30 @@ runtime_metrics = {
     'python_version': sys.version.split()[0],
 }
 
-results = {'score': env.env.score, 'rounds': round - 1, 'invalid_actions': invalid_actions, 'total_actions': total_actions, 'valid_action_rate': (total_actions - invalid_actions) / total_actions if total_actions > 0 else 0}
+if env.env._time >= env.env._mission_length:
+    stop_reason = 'mission_time_expired'
+elif round > args.max_step:
+    stop_reason = 'round_limit_reached'
+else:
+    stop_reason = 'environment_terminated'
+
+bombs = list(env.env._bombs)
+mission = utils.build_bomb_mission_outcome(
+    [bomb.state.name for bomb in bombs],
+    [bomb.num_stages for bomb in bombs],
+    stop_reason,
+)
+
+results = {
+    'score': env.env.score,
+    'rounds': round - 1,
+    'invalid_actions': invalid_actions,
+    'total_actions': total_actions,
+    'valid_action_rate': (total_actions - invalid_actions) / total_actions if total_actions > 0 else 0,
+    'started_at': experiment_started_at,
+    'completed_at': datetime.now(timezone.utc).isoformat(),
+    'mission': mission,
+}
 results.update(total_usage)
 results['model_metrics'] = aggregate_model_metrics
 results['runtime_metrics'] = runtime_metrics
