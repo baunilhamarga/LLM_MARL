@@ -1339,6 +1339,7 @@ class MiniDragonBaseEnv(DragonBaseEnv):
             csv_path: Optional[str] = RESOURCES_DIR / 'mturk_bomb.csv',
             # csv_path: Optional[str] ='D:\py\gym_DRAGON\gym-dragon-mturk\mturk_bomb.csv',
             num_bombs_per_region: int = 5,
+            bomb_sequence_length: Optional[int] = None,
             budget_per_region: Optional[int] = None,
             start_location: Optional[tuple[int, int]] = (28, 56),
             start_regions: set[Region] = set(Region),
@@ -1358,6 +1359,8 @@ class MiniDragonBaseEnv(DragonBaseEnv):
             Path to CSV file containing bomb distribution
         num_bombs_per_region : int, default=15
             Number of bombs to be placed randomly in each region
+        bomb_sequence_length : int, optional
+            Force every randomly placed bomb to have this many phases
         budget_per_region : int, optional
             Team budget per region, to be spent randomly on purchasing tools
         start_location : tuple[int, int], optional, default=(24, 149)
@@ -1418,12 +1421,14 @@ class MiniDragonBaseEnv(DragonBaseEnv):
             if seed == 0:
                 self._place_bombs(
                     csv_path=csv_path,
-                    num_bombs_per_region=num_bombs_per_region)
+                    num_bombs_per_region=num_bombs_per_region,
+                    bomb_sequence_length=bomb_sequence_length)
             else:
                 self._place_bombs(
                     csv_path=None,
                     num_bombs_per_region=num_bombs_per_region,
-                    start_location=start_node.centroid)
+                    start_location=start_node.centroid,
+                    bomb_sequence_length=bomb_sequence_length)
 
             # Reset renderer
             if self._renderer:
@@ -1939,7 +1944,8 @@ class MiniDragonBaseEnv(DragonBaseEnv):
     def _place_bombs(self,
                      csv_path: str = None,
                      num_bombs_per_region: int = 15,
-                     start_location = (28,56)):
+                     start_location = (28,56),
+                     bomb_sequence_length: Optional[int] = None):
         """
         Place bombs on the map.
 
@@ -1949,6 +1955,8 @@ class MiniDragonBaseEnv(DragonBaseEnv):
             Path to CSV file containing bomb distribution
         num_bombs_per_region : int, default=15
             Number of bombs to place in each region (if CSV file is not provided)
+        bomb_sequence_length : int, optional
+            Force every randomly placed bomb to have this many phases
         """
         bombs = {}
         # Load bomb information from CSV file
@@ -1971,6 +1979,13 @@ class MiniDragonBaseEnv(DragonBaseEnv):
         else:
             # Randomly select bomb locations from each region
             color_list = [Color.red,Color.green,Color.blue]
+            if num_bombs_per_region > len(self.valid_nodes):
+                raise ValueError(
+                    f"Cannot place {num_bombs_per_region} unique bombs on "
+                    f"{len(self.valid_nodes)} valid nodes"
+                )
+            if bomb_sequence_length is not None and not 1 <= bomb_sequence_length <= len(color_list):
+                raise ValueError("bomb_sequence_length must be between 1 and 3")
             # Correct locations for valid nodes when centroids are not part of the corresponding region
             corrected_locations = copy.deepcopy(self.valid_nodes)
             for node_id, centroid in corrected_locations.items():
@@ -1987,7 +2002,12 @@ class MiniDragonBaseEnv(DragonBaseEnv):
                 bomb_locations[int(self._random.choice(len(bomb_locations),1)[0])] = start_location
 
             for bomb_id, location in enumerate(bomb_locations):
-                if bomb_id <= num_bombs_per_region/5:  # 1/5 of bombs are 1-phased
+                if bomb_sequence_length is not None:
+                    sequence = [
+                        color_list[x]
+                        for x in self._random.choice(3, bomb_sequence_length, replace=False)
+                    ]
+                elif bomb_id <= num_bombs_per_region/5:  # 1/5 of bombs are 1-phased
                     sequence = [color_list[x] for x in self._random.choice(3,1)]
                 elif bomb_id <=3*num_bombs_per_region/5:  # 2/5 of bombs are 2-phased
                     sequence = [color_list[x] for x in self._random.choice(3, 2,replace = False)]

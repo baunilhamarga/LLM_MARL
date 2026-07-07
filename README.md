@@ -158,9 +158,9 @@ sbatch jobs/llama_local_all_presets.sbatch
 The batch runs `village`, `default`, `medium`, `hard`, and `extreme`
 sequentially on one GPU for 30 rounds with communication enabled, repeating
 each preset with seeds 0, 1, and 2 (15 experiments total). `easy` is excluded
-because of its known bomb-count mismatch. Seeds, round count, output length,
-and the optional ToM measurements are configurable near the top of the batch
-file. Monitor it with `squeue -u "$USER"` and inspect
+from this batch by design. Seeds, round count, output length, and the optional
+ToM measurements are configurable near the top of the batch file. Monitor it
+with `squeue -u "$USER"` and inspect
 `logs/llama31_marl_maps-<job-id>.out`.
 
 Any OpenAI-compatible server can be selected with an explicit base URL:

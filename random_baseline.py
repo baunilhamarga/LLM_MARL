@@ -33,8 +33,12 @@ def random_baseline(seed=0, num_episodes=1, max_rounds=30, render=False, perform
                         obs_wrapper=MiniObs,
                         valid_nodes=PRESETS[preset])
     env.seed(seed)
+    bomb_config = {
+        'num_bombs_per_region': 3 if preset == 'easy' else 5,
+        'bomb_sequence_length': 3 if preset == 'easy' else None,
+    }
     for episode in range(num_episodes):
-        obs = env.reset()
+        obs = env.reset(csv_path=None, **bomb_config)
         done = {agent_id: False for agent_id in env.get_agent_ids()}
         with trange(1, max_rounds + 1, desc=f"Episode {episode+1}/{num_episodes}", unit="round") as t:
             for round in t:

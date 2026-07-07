@@ -57,20 +57,20 @@ class DragonTextEnv():
         if self.graph_compression:
             self.compressed_graph = CompressedGraph(self.env.graph, method=self.compression_method, k=k, entry_policy="random", seed=self.seed)
             self.nodes_per_region_str = self.compressed_graph.nodes_per_region_str()
-            
 
-        # TODO: Derive or validate the bomb count from the selected preset.
-        # The "easy" preset has only 3 valid nodes, but reset currently requests
-        # 5 unique bomb locations, causing NumPy sampling with replace=False to fail.
+        bomb_config = {
+            'num_bombs_per_region': 3 if preset == 'easy' else 5,
+            'bomb_sequence_length': 3 if preset == 'easy' else None,
+        }
         if self.tool_per_agent == 2:
             self.env.reset(csv_path =None,
-                           num_bombs_per_region = 5,
+                           **bomb_config,
                            start_location = None,
                            start_regions=set(Region.village),
                            tool_allocation = {'alpha':{Tool.red:99,Tool.green:99},'bravo':{Tool.blue:99,Tool.green:99},'charlie':{Tool.red:99,Tool.blue:99}})
         else:
             self.env.reset(csv_path =None,
-                           num_bombs_per_region = 5,
+                           **bomb_config,
                            start_location = None,
                            start_regions=set(Region.village),
                            tool_allocation = {'alpha':{Tool.red:99},'bravo':{Tool.green:99},'charlie':{Tool.blue:99}})
